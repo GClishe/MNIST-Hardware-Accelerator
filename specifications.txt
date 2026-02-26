@@ -1,0 +1,35 @@
+Overview and performance targets:
+    - Goal is to create a low-power inference engine for the MNIST dataset
+    - Architecture is a SIMD-based MAC array with centralized control unit
+    - Clock frequency target is 100MHz
+    - Latency target is less than 1ms inference latency per image
+    - Implementation is done with synthesizable SystemVerilog RTL
+
+Data Path and Precision:
+    - Activation width (ACT_WIDTH): Parametrizable, defaults to 8-bit. Final value depends on network compression
+    - Weight width (WGT_WIDTH): Parametrizable, defaults to 8-bit. Final value depends on network compression 
+    - Accumulator width (ACC_WIDTH): Parametrizable, calculated based on ACT_WIDTH and WGT_WIDTH
+    - Process Engine count (PE_COUNT): Parametrizable to easily scale the hardware up or down
+
+Module Specifications:
+    - Process Engine Array:
+        * Performs the core arithmetic. Contains MAC logic and activation function (TBD) logic 
+        * Executes instructions with SIMD process flow. All PEs receive the same control signals from the control bus simultaneously
+        * Expected ports: Clock, reset, ACT_IN (activation input), WGT_IN (weight input), MAC_EN (enable accumulation), APPLY_ACT (trigger the activation function), RESULT_OUT
+    - Control Unit:
+        * Directs the entire inference process by managing the FSM, generating memory addresses, and issuing control signals
+        * Memory interfacing: generates and outputs activation addresses and weight addresses to the memory block
+        * Process engine interfacing: coordinates the MAC and activation operations through the control bus
+        * Preliminary FSM states:
+            - IDLE: Waiting for start signal
+            - LOAD: Fetching initial weights and activations from memory
+            - COMPUTE: Enabling PE MAC units
+            - ACTIVATE: Applying activation function
+            - STORE: Writing results back to memory or outputs
+    - Memory Block:
+        * Stores the neural network data; separated into activation memory and weight memory
+        * Detailed memory architecture, loading mechanisms, data streaming, etc. will be designed in coordination with Jose
+    
+Verification Strategy:
+    - Individual testbenches will be created to display correct behavior of independent PE and control unit modules
+    - Full system verification will use MNIST test vectors
