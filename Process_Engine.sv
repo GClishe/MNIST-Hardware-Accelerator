@@ -49,8 +49,9 @@ module Process_Engine # (
 );
 
 localparam int MULT_W = ACT_W + WGT_W + 1;                // the width of the multiplier. Adding a 1 because casting unsigned ACT_IN to signed ACT_IN requires an additional bit. 
+localparam int ACC_W = WGT_W + ACT_W 
 localparam logic [ACT_W-1:0] MAX_ACT = {ACT_W{1'b1}};     // the maximum possible magnitude of an ACT_W-sized unsigned integer. {N{val}} concatenates val with itself N times
-
+       
 logic signed [ACC_W-1: 0] acc;                // accumulator 
 logic signed [ACC_W-1:0] max_act_resized;     // same magnitude as MAX_ACT, but it needs to be resized to the size of the accumulator for safe comparisons later on
 logic signed [MULT_W-1:0] mult_val;           // value from the multiplier
@@ -78,7 +79,7 @@ always_ff @(posedge clk) begin
 
         // if we want a MAC operation to take place, we need the MAC_EN signal to be high
         else if (MAC_EN) begin
-            acc <= acc + mult_val_ext;
+            acc <= acc + mult_val_resized;
             OUT_VALID <= 0;
         end
 
