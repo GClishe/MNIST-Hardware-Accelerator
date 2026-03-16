@@ -46,9 +46,12 @@ module Process_Engine_tb;
     // clearing accumulator, performing MAC, adding bias, then activation function
     
     // defining a task that performs a reset
-    // in this task, reset is asserted and all control and data signals are de-asserted
-    task do_reset();
-    begin
+    // in this task, reset is asserted and all control and data signals are de-asserted.
+    // Automatic keyword allows each function call to use local copy of variables, meaning that
+    // successive function calls before the first one finishes will not overwrite the variables
+    // in the first function call. For tasks like do_reset(), it is likely not necessary to use
+    // the keyword, but I will be using it for all tasks for safety. 
+    task automatic do_reset();
         // these signals are set at current sim time, so asynchronously
         rst = 1;
         clear_acc = 0;
@@ -62,10 +65,71 @@ module Process_Engine_tb;
         repeat (2) @(posedge clk);  // holding reset for two clock cycles
         rst = 0;                    // de-asserting reset immediately after second posedge
         @(posedge clk);             // waiting for next clock cycle
-        // now DUT is reset and ready for next task
-    end    
+        // now DUT is reset and ready for next task 
     endtask 
     
+    // task that clears the accumulator; sets data/control signals to 0
+    task automatic do_acc_clear();       
+        clear_acc = 1;
+        rst = 0;
+        MAC_EN = 0;
+        BIAS_EN = 0;
+        APPLY_ACT = 0;
+        ACT_IN = '0;
+        WGT_IN = '0;
+        BIAS_IN = '0;
+       @(posedge clk);
+       clear_acc = 0;
+    endtask 
+    
+    task automatic do_MAC(
+        // activations are unsigned ints, weights are signed. this is not a problem; see the PE module for how this situation is handled. 
+        input logic [ACT_W-1:0] act_vec[0: NUM_MACS-1],
+        input logic signed [WGT_W-1:0] wgt_vec[0: NUM_MACS-1]
+    );
+        int i;
+
+        BIAS_EN = 0;
+        APPLY_ACT = 0;
+        MAC_EN = 1;         // MAC_EN should remain high as long as mac operations are desired. 
+        for (i=0; i < NUM_MACS; i++) begin 
+            @(posedge clk);
+            ACT_IN <= act_vec[i];
+            WGT_IN <= wgt_vec[i];
+        end
+        MAC_EN = 0;         // de-asserting MAC_EN, since the MAC operations have now completed
+        @(posedge clk);
+    endtask 
+    
+    task automatic do_bias(input logic signed [BIAS_W-1:0] bias_val);
+        rst = 0;
+        clear_acc = 0;
+        MAC_EN = 0;
+        BIAS_EN = 1;        // enable bias
+        APPLY_ACT = 0;
+        ACT_IN = '0;
+        WGT_IN = '0;
+        BIAS_IN = bias_val;
+        
+        @(posedge clk);
+        BIAS_EN = 0;
+    endtask
+    
+    task automatic do_activation();
+        rst = 0;
+        clear_acc = 0;
+        MAC_EN = 0;
+        BIAS_EN = 0;       
+        APPLY_ACT = 1;      // enable activation
+        ACT_IN = '0;
+        WGT_IN = '0;
+        BIAS_IN = '0;
+     
+        @(posedge clk);
+        APPLY_ACT = 0;    
+    endtask
+    
+  
     
     
     // creating a clock; a 100MHz clock has a period of 10ns
