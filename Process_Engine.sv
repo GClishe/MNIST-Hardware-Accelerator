@@ -33,7 +33,7 @@ module Process_Engine # (
     parameter int ACT_W = 8,
     parameter int WGT_W = 8,
     parameter int BIAS_W = 8,
-    parameter int ACC_W = 20 
+    parameter int NUM_MACS = 20                        // number of MAC operations in the dot product. Used to determine ACC_W 
 ) (
     input  logic                        clk,
     input  logic                        rst,
@@ -48,8 +48,9 @@ module Process_Engine # (
     output logic                        OUT_VALID      // flag that is raised when the output can and should be read
 );
 
+
 localparam int MULT_W = ACT_W + WGT_W + 1;                // the width of the multiplier. Adding a 1 because casting unsigned ACT_IN to signed ACT_IN requires an additional bit. 
-localparam int ACC_W = WGT_W + ACT_W 
+localparam int ACC_W = MULT_W + $clog2(NUM_MACS);         // width of the accumulator. Depends on the width of the multiplication products and the number of such products being accumulated.
 localparam logic [ACT_W-1:0] MAX_ACT = {ACT_W{1'b1}};     // the maximum possible magnitude of an ACT_W-sized unsigned integer. {N{val}} concatenates val with itself N times
        
 logic signed [ACC_W-1: 0] acc;                // accumulator 
