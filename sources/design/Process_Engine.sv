@@ -14,15 +14,8 @@ all receive a different weight from the weight memory.
 
 The math of the perceptron can be seen in the perceptron_matmul.png in this directory. 
 
-For the moment, it is easiest to design the module such that each PE handles a single activation. For example, PE_0 will handle activation 0 for each layer. This does contradict the idea I had 
-to build the architecture with a fully parametrizable number of process engines (whereas this approach requires 10). But I will start with 10 process engines because it is simplest. Once I have 
-a working basic implementation that can handle exactly 10 PEs, I may go back (provided we have time) to make it parametrizable. I do not expect the PE module below to change, but the way the 
-control unit functions will have to change. 
-
-If we have 10 PEs, each PE is associated with a single activation, as stated above. This means that to compute activation a_0^1, PE_0 needs to compute the dot product [w00 w01 w02 ... ] * [a_0^0 a_1^0 a_2^0 ...],
-where I have ommitted the superscript 0 on each weight (again, see perceptron_matmul.png) for details.
-
-Weights and activations will be streamed in serially for each dot product.
+Weights and activations are streamed into the process engine serially. The width of the accumulator depends on the number of MAC operations performed in a single dot product, but the result in the accumulator
+after the RELU is clamped to the maximum value possible for a number of ACT_W bits if the accumulator value exceeds this threshold. 
 
 Note that this module is not pipelined (for simplicity). This should be attempted if the 100MHZ clock frequency target is difficult to reach. 
 
@@ -33,7 +26,7 @@ module Process_Engine # (
     parameter int ACT_W = 8,
     parameter int WGT_W = 8,
     parameter int BIAS_W = 8,
-    parameter int NUM_MACS = 20                        // number of MAC operations in the dot product. Used to determine ACC_W 
+    parameter int NUM_MACS = 784                        // number of MAC operations in the dot product. Used to determine ACC_W 
 ) (
     input  logic                        clk,
     input  logic                        rst,
