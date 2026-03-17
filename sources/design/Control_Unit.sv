@@ -15,10 +15,16 @@ module Control_Unit # (
     output MAC_EN,      // enable MAC operation
     output BIAS_EN,     // enables bias computation
     output APPLY_ACT,   // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
-
-
 );
 
+typedef enum logic [2:0] {          // defines a named type `state`, encoded in 3 bits
+        S_IDLE  = 3'd0,             // waiting for start signal
+        S_MAC  = 3'd1,              // Enabling PE MAC units and fetching weights and activations from memory
+        S_ACTIVATE = 3'd2           // Applying activation function
+        S_STORE  = 3'd3             // Writing results back to memory or outputs
+    } state_t;
+
+state_t state;  // declaring state variable with type state_t
 
 
 endmodule
