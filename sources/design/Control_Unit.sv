@@ -7,15 +7,15 @@ module Control_Unit # (
     parameter int NUM_PE = 4
 
 ) (
-    input clk,
-    input rst,
-    input OUT_VALID,            // signal from PE indicating completion of MAC, bias, and RELU. PE output should be read only when OUT_VALID is high
+    input i_clk,
+    input i_rst,
+    input i_out_valid,            // signal from PE indicating completion of MAC, bias, and RELU. PE output should be read only when OUT_VALID is high
 
     // control signals for process engines
-    output clear_acc,   // clear accumulator
-    output MAC_EN,      // enable MAC operation
-    output BIAS_EN,     // enables bias computation
-    output APPLY_ACT,   // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
+    output o_clear_acc,   // clear accumulator
+    output o_mac_en,      // enable MAC operation
+    output o_bias_en,     // enables bias computation
+    output o_apply_act,   // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
 );
 
 typedef enum logic [3:0] {          // defines a named type `state`, encoded in 4 bits
@@ -32,7 +32,7 @@ typedef enum logic [3:0] {          // defines a named type `state`, encoded in 
         S_BROADCAST     = 4'd10     
     } state_t;
 
-state_t state;  // declaring state variable with type state_t
+state_t r_state;  // declaring r_state register with type state_t
 
 
 endmodule
