@@ -27,7 +27,9 @@ module Control_Unit # (
     output logic o_apply_act,     // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
     output logic [3:0] o_current_state,  // signal for top module. describes what state the machine is currently in 
     output logic [15:0] o_act_idx,        // address of activation memory (independent of which activation bank we are reading from) from which we read during MAC 
-    output logic o_act_re                // read enable for activation memory. Broadcast high during MAC state
+    output logic o_act_re,                // read enable for activation memory. Broadcast high during MAC state
+    output logic o_wgt_re,                // read enable for weight memory
+    output logic [15:0] o_wgt_idx         // address for weight memory from which we read during MAC
 );
 
 typedef enum logic [3:0] {          // defines a named type `state`, encoded in 4 bits
@@ -65,24 +67,28 @@ always_ff @(posedge i_clk) begin
     if (i_rst == 1) begin
         r_curr_state <= S_START;
         r_layer_idx <= '0;       // this is technically not required because this value will be set anyways when we move to idle state, but it doesn't hurt either.
-        r_MAC_counter <= '0     // resetting the MAC counter to 0
+        r_MAC_counter <= '0;     // resetting the MAC counter to 0
         o_rst <= 1;             // when global reset is applied to control unit, the control unit will also broadcast a reset to the process engines
         o_mac_en <= 0;
     end
     else begin
         // state machine core logic goes here
         case (r_curr_state)
-            S_START:
+            S_START: begin
                 r_curr_state <= S_CLEAR;
-            S_CLEAR:
-                o_rst <= 1;             // reset is broadcasted to all PEs
+            end
+            S_CLEAR: begin
+                o_rst <= 1'b1;             // reset is broadcasted to all PEs
                 r_curr_state <= S_IDLE;
-            S_IDLE:  
+            end
+            S_IDLE: begin
+                o_rst <= 1'b0;          // de-assert PE reset
                 r_layer_idx <= '0;      // initializes r_layer_idx to 0 (the input activations) before moving to LOAD_MEM
                 if (i_activations_ready == 1) begin
-                    r_curr_state <= LOAD_MEM;       // moving to LOAD_MEM when the input activations have all been written into memory
+                    r_curr_state <= S_LOAD_MEM;       // moving to LOAD_MEM when the input activations have all been written into memory
                 end
-            S_LOAD_MEM:
+            end
+            S_LOAD_MEM: begin
                 // in this state, we prepare the next compute pass by resetting write and read addresses, selecting source/destination layers, and priming first activation read
 
                 r_in_idx <= '0;         // reset the per-pass input counter so MAC starts at the first source activation. Remember that the same activation is sent to all PEs
@@ -123,7 +129,7 @@ always_ff @(posedge i_clk) begin
                 store activations at addresses 4, 5, 6, 7, then tile 3 will store activations at addresses 8, 9. The logic for disabling writing for the last two PEs on the last tile is not handled
                 in this state.*/
                 r_store_base_idx <= r_tile_idx * NUM_PE;    
-
+                o_clear_acc <= 1'b1;    // clear accumulator for new dot product pass
                 r_MAC_counter <= '0;    // reset MAC counter for new dot-product pass
 
                 o_act_re <= 1'b1;   // priming activation RAM read. Since RAM is synchronous, the data for address 0 will not be available until the next clock cycle.
@@ -132,7 +138,7 @@ always_ff @(posedge i_clk) begin
                 o_mac_en <= 1'b0;   // ensuring mac enable is not on yet
 
                 r_curr_state <= S_BROADCAST; // move to broadcast state
-
+            end 
             S_BROADCAST: begin
                 // one-cycle state to prime the RAM. Address 0 was already presented during the last state and by the end of this cycle, the activation data for index 0 is available. same for the weight data
                 o_clear_acc <= 1'b0;        // stop clearing accumulators now that the new pass is about to begin
@@ -160,12 +166,21 @@ always_ff @(posedge i_clk) begin
                     r_in_idx      <= r_in_idx + 1'b1;
                 end
             end
-            S_BIAS:         
-            S_ACTIVATE:     
-            S_STORE:        
-            S_ADVANCE_TILE: 
-            S_ADVANCE_LAYER:
-            S_BROADCAST:   
+            S_BIAS: begin
+                
+            end       
+            S_ACTIVATE: begin
+                
+            end   
+            S_STORE: begin
+                
+            end     
+            S_ADVANCE_TILE: begin
+                
+            end
+            S_ADVANCE_LAYER: begin
+                
+            end
 
             default: r_curr_state <= S_START;
         endcase
@@ -173,8 +188,7 @@ always_ff @(posedge i_clk) begin
 
 end
 
-assign o_current_state <= r_curr_state;         // o_current_state asynchonously tied to r_curr_state
-assign o_act_idx <= r_in_idx;
+assign o_current_state = r_curr_state;         // o_current_state asynchonously tied to r_curr_state
 assign o_act_idx = r_in_idx;
 assign o_wgt_idx = r_weight_base_idx + r_in_idx;    // address in weight memory where value is fixed depends on the weight base index (which itself depends on the tile index) and with r_in_idx
 
