@@ -215,10 +215,14 @@ always_ff @(posedge i_clk) begin
                 r_curr_state <= S_ACTIVATE
             end       
             S_ACTIVATE: begin
+                o_bias_en = 1'b0;
+                o_apply_act = 1'b1;
                 
+                // it might be reasonable to only move states when the PE raises its o_out_valid flag, but currently this happens at the same time as o_apply_act, so I wont worry about this for now. 
+                r_curr_state <= S_STORE;
             end   
             S_STORE: begin
-                
+                o_apply_act = 1'b0;
             end     
             S_ADVANCE_TILE: begin
                 
