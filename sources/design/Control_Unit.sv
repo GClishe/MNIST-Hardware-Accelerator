@@ -28,9 +28,7 @@ that for these RAMs, the weights for the next layer would be placed after the we
 
 Notice that the 0 padding for each layer still comes before the weights of the next layer. This is necessary for us to be able to share the same RAM address for all WGT RAMs. 
 
-In terms of how that address is determined, it is easy to see that since the activations are a different vector for each layer, the address will always start at 0 for a layer and increment until all values in ACT_RAM
-have been read, at which point we know that the layer is done. Nothing special there. However, the WGT RAM is slighly more complex. Let's look at WGT_RAM0 as an example. For the first layer and first tile, (each set of square brackets represents a new tile) the base address is 0. But then when its time to compute the second tile, the base address needs to be tile_idx (1) * LAYER1_LENGTH (10). This is why the S_LOAD_MEM state 
-sets a base weight address to tile_idx*LAYER_SIZE. The bias base address is a little easier, since each MAC cycle only uses one bias. In other words, there is only one bias per tile. This means we can use the tile_idx as the bias address. Notice that o_bias_idx is asynchronously tied to r_tile_idx (in other words, they are two words for the same net).
+TODO write description on how base addresses are computed; tile idx are computed relative to each layer. So once we advance layers, we also reset tile_idx.
 
 */
 
@@ -53,6 +51,9 @@ module Control_Unit # (
     input logic i_rst,                  // global reset. this triggers a reset in the CU, during which a reset is also applied to the PEs. o_rst is a local reset signal sent from the CU to the PE
     input logic i_out_valid,            // signal from PE indicating completion of MAC, bias, and RELU. PE output should be read only when OUT_VALID is high
     input logic i_activations_ready,    // signal broadcasted when input activation memory bank is full and ready to be broadcasted (causes transition from S_IDLE to S_LOAD_MEM)
+    input logic i_psc_valid,            // signal from the parallel->series conver (psc) indicating a valid output (o_activation_valid on psc module)
+
+    output logic [3:0] o_current_state,  // signal for top module. describes what state the machine is currently in 
 
     // control signals for process engines
     output logic o_rst,            // reset signal streamed from the CU to the process engines. Not same signal
@@ -60,14 +61,37 @@ module Control_Unit # (
     output logic o_mac_en,        // enable MAC operation
     output logic o_bias_en,       // enables bias computation
     output logic o_apply_act,     // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
-    output logic [3:0] o_current_state,  // signal for top module. describes what state the machine is currently in 
+    
+    // parallel->serial converter control
+    output logic o_psc_shift_en,        // turns on shift-enable for psc
+
+    // activation memory control signals
     output logic [15:0] o_act_idx,        // address of activation memory (independent of which activation bank we are reading from) from which we read during MAC 
     output logic o_act_re,                // read enable for activation memory. Broadcast high during MAC state
+    output logic o_act_we,                // write enable for activation memory. See S_STORE for details on when this is high. 
+    output logic [15:0] o_store_idx,      // address of activation RAM in which to write
+    // activation wr_data handled in top module; psc output connected to activation RAMs
+
+    // weight & bias memroy control signals (read only)
     output logic o_wgt_re,                // read enable for weight memory
     output logic [15:0] o_wgt_idx,         // address for weight memory from which we read during MAC
     output logic o_bias_re,               // bias RAM read-enable
-    output logic o_bias_idx               // bias RAM address (same for all biases)
+    output logic [15:0] o_bias_idx,               // bias RAM address (same for all biases)
 );
+// count the number of tiles in each layer. Helpful for determining base weight addresses in the LOAD_MEM state
+localparam int L0_NUM_TILES = (LAYER1_SIZE       + NUM_PE - 1) / NUM_PE;
+localparam int L1_NUM_TILES = (LAYER2_SIZE       + NUM_PE - 1) / NUM_PE;
+localparam int L2_NUM_TILES = (OUTPUT_LAYER_SIZE + NUM_PE - 1) / NUM_PE;
+
+// Number of weights per layer. Size of each weight RAM will be WSPAN0 + WPSAN1 + WSPAN2
+localparam int WSPAN0 = L0_NUM_TILES * INPUT_LAYER_SIZE;
+localparam int WSPAN1 = L1_NUM_TILES * LAYER1_SIZE;
+localparam int WSPAN2 = L2_NUM_TILES * LAYER2_SIZE;
+
+// number of biases per layer. Equal to the number of tiles in that layer. Also helpful for determining base address in bias memory
+localparam int BSPAN0 = L0_NUM_TILES;
+localparam int BSPAN1 = L1_NUM_TILES;
+localparam int BSPAN2 = L2_NUM_TILES;
 
 typedef enum logic [3:0] {          // defines a named type `state`, encoded in 4 bits
         S_START         = 4'd0,     // start state. begin here
@@ -99,6 +123,9 @@ logic [15:0] r_num_outputs;
 logic [15:0] r_store_base_idx;
 logic [15:0] r_weight_base_idx;
 logic [15:0] r_bias_base_idx;
+logic [15:0] r_store_count;
+logic [15:0] r_outputs_this_tile;
+
 
 always_ff @(posedge i_clk) begin
 
@@ -139,26 +166,49 @@ always_ff @(posedge i_clk) begin
                     0: begin
                         r_num_inputs    <= INPUT_LAYER_SIZE;    // num of activations in the source layer (read by the PEs)
                         r_num_outputs   <= LAYER1_SIZE;         // number of outputs equals number of neurons in first hidden layer
-                        r_weight_base_idx <= r_tile_idx * INPUT_LAYER_SIZE; // base address for the weight memories; depends on the tile
+                        r_weight_base_idx <= (r_tile_idx * INPUT_LAYER_SIZE);   // base address in weight memory where weights will begin reading
+                        r_bias_base_idx <= 0;
+
+                        // we need to compute the number of outputs that each tile will store. For example, if PE=4 and num_outputs is 5, then on tile 0 it should be 4 and on tile 1 it should be 1
+                        // r_outputs_this_tile allows control unit to halt writing in final tiles for PEs that computed garbage data.
+                        if ((LAYER1_SIZE - (r_tile_idx * NUM_PE)) >= NUM_PE)
+                            r_outputs_this_tile <= NUM_PE;
+                        else
+                            r_outputs_this_tile <= LAYER1_SIZE - (r_tile_idx * NUM_PE);
                     end
 
                     1: begin
                         r_num_inputs    <= LAYER1_SIZE;
                         r_num_outputs   <= LAYER2_SIZE; 
-                        r_weight_base_idx <= r_tile_idx * LAYER1_SIZE;  
+                        r_weight_base_idx <= WSPAN0 + (r_tile_idx * LAYER1_SIZE); 
+                        r_bias_base_idx <= BSPAN0;
+
+                        if ((LAYER2_SIZE - (r_tile_idx * NUM_PE)) >= NUM_PE)
+                            r_outputs_this_tile <= NUM_PE;
+                        else
+                            r_outputs_this_tile <= LAYER2_SIZE - (r_tile_idx * NUM_PE);
                     end     
                     2: begin
                         r_num_inputs    <= LAYER2_SIZE;
                         r_num_outputs   <= OUTPUT_LAYER_SIZE;   
-                        r_weight_base_idx <= r_tile_idx * LAYER2_SIZE;
+                        r_weight_base_idx <= WSPAN0 + WSPAN1 + (r_tile_idx * LAYER2_SIZE);
+                        r_bias_base_idx <= BSPAN0 + BSPAN1;
+
+                        if ((OUTPUT_LAYER_SIZE - (r_tile_idx * NUM_PE)) >= NUM_PE)
+                            r_outputs_this_tile <= NUM_PE;
+                        else
+                            r_outputs_this_tile <= OUTPUT_LAYER_SIZE - (r_tile_idx * NUM_PE);
                     end 
                     default: begin
-                        r_num_inputs  <= '0;
-                        r_num_outputs <= '0;
-                        r_weight_base_idx <= '0;
-                    end     
+                        r_num_inputs       <= '0;
+                        r_num_outputs      <= '0;
+                        r_weight_base_idx  <= '0;
+                        r_bias_base_idx    <= '0;
+                        r_store_base_idx   <= '0;
+                        r_outputs_this_tile <= '0;
+                    end   
                 endcase
-            
+
                 /*We cannot always set the destination address (where we will write activations in S_STORE) to 0, since a single PE pass may not be enough to complete a layer. Remember
                 that each layer is broken up into tiles. Suppose we have 4 PEs and we are trying to compute all 10 activations in the output layer. The first tile consists of 4 activations,
                 since there are 4 PEs. For this first tile (r_tile_idx=0), we do want the base address for writing to be 0, since nothing has been written to the output layer yet. But after 
@@ -212,17 +262,52 @@ always_ff @(posedge i_clk) begin
                 o_wgt_re    <= 1'b0;
                 o_bias_re   <= 1'b0;  
                 o_bias_en   <= 1'b1;
-                r_curr_state <= S_ACTIVATE
+                r_curr_state <= S_ACTIVATE;
             end       
             S_ACTIVATE: begin
-                o_bias_en = 1'b0;
-                o_apply_act = 1'b1;
-                
+                o_bias_en <= 1'b0;
+                o_apply_act <= 1'b1;
+                r_store_count <= '0;    // initializing signal used in next state
+
                 // it might be reasonable to only move states when the PE raises its o_out_valid flag, but currently this happens at the same time as o_apply_act, so I wont worry about this for now. 
                 r_curr_state <= S_STORE;
             end   
             S_STORE: begin
-                o_apply_act = 1'b0;
+                // there should be no process engine arithmetic active anymore
+                o_clear_acc <= 1'b0;
+                o_mac_en    <= 1'b0;
+                o_bias_en   <= 1'b0;
+                o_apply_act <= 1'b0;
+                o_act_re    <= 1'b0;
+                o_wgt_re    <= 1'b0;
+                o_bias_re   <= 1'b0;
+
+                o_psc_shift_en <= 1'b1;     // tell the parallel->serial converter (psc) to begin shifting
+                
+                o_act_we     <= 1'b0;       // this is a default case; do not write unless the converter says the output is valid
+                if (i_psc_valid) begin
+                    // When the condition is met, the psc has produced a valid serial activation on this cycle, so we need to write
+                    // it to the destination activation RAM at the base index for this tile + numbers already written in this tile.
+                    o_act_we <= 1'b1;                       // overrides default case above. 
+                    r_store_count <= r_store_count + 1'b1;  // counter tracking the number of writes during this cycle
+                    
+                    // we need to check if r_store_count has reached the number of outputs in this tile
+                    if (r_store_count == r_outputs_this_tile - 1'b1) begin
+                        // this valid serial output is the last one for this tile
+                        o_psc_shift_en <= 1'b0; // so we de-assert of shift enable, 
+                        o_act_we <= 1'b1;       // but we still need to write the last value, so keep write-enable on
+                        r_store_count <= '0;    // reset the store counter
+
+                        // now we need to decide if we should move to the next tile or the next layer
+                        if (r_store_base_idx + r_outputs_this_tile >= r_num_outputs) begin  // we advance layers if we have completely populated the destination activation RAM 
+                            r_curr_state <= S_ADVANCE_LAYER;
+                        end
+                        else begin
+                            r_curr_state <= S_ADVANCE_TILE;
+                        end
+                    end
+                end
+
             end     
             S_ADVANCE_TILE: begin
                 
@@ -240,6 +325,7 @@ end
 assign o_current_state = r_curr_state;         // o_current_state asynchonously tied to r_curr_state
 assign o_act_idx = r_in_idx;
 assign o_wgt_idx = r_weight_base_idx + r_in_idx;    // address in weight memory where value is fixed depends on the weight base index (which itself depends on the tile index) and with r_in_idx
-assign o_bias_idx = r_tile_idx;                     // address in bias memory
+assign o_bias_idx = r_bias_base_idx + r_tile_idx;   // address in bias memory. equal to the base index plus the tile value we are on
+assign o_store_idx = r_store_base_idx + r_store_count; //address of activation memory in which to write is the base idx (r_tile_idx * NUM_PE) + nums stored in a store cycle
 
 endmodule
