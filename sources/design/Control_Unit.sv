@@ -26,7 +26,7 @@ module Control_Unit # (
     output logic o_bias_en,       // enables bias computation
     output logic o_apply_act,     // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
     output logic [3:0] o_current_state,  // signal for top module. describes what state the machine is currently in 
-    output logic [16:0] o_act_idx,        // address of activation memory (independent of which activation bank we are reading from) from which we read during MAC 
+    output logic [15:0] o_act_idx,        // address of activation memory (independent of which activation bank we are reading from) from which we read during MAC 
     output logic o_act_re                // read enable for activation memory. Broadcast high during MAC state
 );
 
@@ -48,7 +48,7 @@ typedef enum logic [3:0] {          // defines a named type `state`, encoded in 
 state_t r_curr_state;                       // declaring r_state register with type state_t
 
 logic [$clog2(NUM_LAYERS)-1:0] r_layer_idx; // signal used to determine which activation memory bank the PE will read from
-logic [16:0] r_MAC_counter;                 // counts number of mac operations that have occured while in S_MAC state. Needs to be large enough to accomodate the max layer size (probably the input layer)
+logic [15:0] r_MAC_counter;                 // counts number of mac operations that have occured while in S_MAC state. Needs to be large enough to accomodate the max layer size (probably the input layer)
 
 //TODO dynamically size the registers below. some of them depend on parameters not yet (as of 3/18) finalized, such as number of neurons in hidden layers
 logic [15:0] r_tile_idx;                            
@@ -57,7 +57,8 @@ logic [15:0] r_src_layer_sel;
 logic [15:0] r_dst_layer_sel;
 logic [15:0] r_num_inputs;
 logic [15:0] r_num_outputs;
-logic [15:0] r_store_base_idx
+logic [15:0] r_store_base_idx;
+logic [15:0] r_weight_base_idx;
 
 always_ff @(posedge i_clk) begin
 
@@ -83,7 +84,7 @@ always_ff @(posedge i_clk) begin
                 end
             S_LOAD_MEM:
                 // in this state, we prepare the next compute pass by resetting write and read addresses, selecting source/destination layers, and priming first activation read
-                
+
                 r_in_idx <= '0;         // reset the per-pass input counter so MAC starts at the first source activation. Remember that the same activation is sent to all PEs
 
                 // defining source and destination layers. These values determine which RAM instance will be read from and written to, respectively
@@ -94,19 +95,23 @@ always_ff @(posedge i_clk) begin
                     0: begin
                         r_num_inputs    <= INPUT_LAYER_SIZE;    // num of activations in the source layer (read by the PEs)
                         r_num_outputs   <= LAYER1_SIZE;         // number of outputs equals number of neurons in first hidden layer
+                        r_weight_base_idx <= r_tile_idx * INPUT_LAYER_SIZE; // base address for the weight memories; depends on the tile
                     end
 
                     1: begin
                         r_num_inputs    <= LAYER1_SIZE;
-                        r_num_outputs   <= LAYER2_SIZE;   
+                        r_num_outputs   <= LAYER2_SIZE; 
+                        r_weight_base_idx <= r_tile_idx * LAYER1_SIZE;  
                     end     
                     2: begin
                         r_num_inputs    <= LAYER2_SIZE;
                         r_num_outputs   <= OUTPUT_LAYER_SIZE;   
+                        r_weight_base_idx <= r_tile_idx * LAYER2_SIZE;
                     end 
                     default: begin
                         r_num_inputs  <= '0;
                         r_num_outputs <= '0;
+                        r_weight_base_idx <= '0;
                     end     
                 endcase
             
@@ -122,26 +127,31 @@ always_ff @(posedge i_clk) begin
                 r_MAC_counter <= '0;    // reset MAC counter for new dot-product pass
 
                 o_act_re <= 1'b1;   // priming activation RAM read. Since RAM is synchronous, the data for address 0 will not be available until the next clock cycle.
+                o_wgt_re <= 1'b1;   // same for weight RAM read. 
+
                 o_mac_en <= 1'b0;   // ensuring mac enable is not on yet
 
                 r_curr_state <= S_BROADCAST; // move to broadcast state
 
             S_BROADCAST: begin
-                // one-cycle state to prime the RAM. Address 0 was already presented during the last state and by the end of this cycle, the activation data for index 0 is available
+                // one-cycle state to prime the RAM. Address 0 was already presented during the last state and by the end of this cycle, the activation data for index 0 is available. same for the weight data
                 o_clear_acc <= 1'b0;        // stop clearing accumulators now that the new pass is about to begin
                 o_act_re <= 1'b1;           // keep activation read enable asserted so streaming can continue
-
+                o_wgt_re <= 1'b1;           // same for wgt read enable
                 o_mac_en <= 1'b1;       // enable MAC on next cycle so that MAC can begin as soon as we enter MAC state 
                 r_curr_state <= S_MAC;  // move into the real MAC loop
             end
             S_MAC: begin
                 // each cycle in this state corresponds to one multiply-accumulate
                 // note that mac enable and activation read enable signals are still on from the broadcast state
+            
                 if (r_MAC_counter == r_num_inputs - 1'b1) begin
                     // perform the final MAC for the current dot product and move on to biasing
                     r_MAC_counter <= '0;
                     o_mac_en <= 1'b0;
                     o_act_re <= 1'b0;
+                    o_wgt_re <= 1'b0;
+
                     r_curr_state <= S_BIAS;
                 end
                 else begin
@@ -165,5 +175,7 @@ end
 
 assign o_current_state <= r_curr_state;         // o_current_state asynchonously tied to r_curr_state
 assign o_act_idx <= r_in_idx;
+assign o_act_idx = r_in_idx;
+assign o_wgt_idx = r_weight_base_idx + r_in_idx;    // address in weight memory where value is fixed depends on the weight base index (which itself depends on the tile index) and with r_in_idx
 
 endmodule
