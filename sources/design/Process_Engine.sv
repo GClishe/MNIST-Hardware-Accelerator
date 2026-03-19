@@ -86,7 +86,7 @@ always_ff @(posedge i_clk) begin
         
         // after bias is applied, the RELU will be activated, and positive numbers above 8 bits will be clamped to 8'b11111111
         else if (i_apply_act) begin
-            if (acc < 0) begin
+            if (r_acc < 0) begin
                 o_result <= '0;
                 o_out_valid <= 1;
             end
