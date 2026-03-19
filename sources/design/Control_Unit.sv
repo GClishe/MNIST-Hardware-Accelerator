@@ -294,12 +294,11 @@ always_ff @(posedge i_clk) begin
 
                 o_psc_shift_en <= 1'b1;     // tell the parallel->serial converter (psc) to begin shifting
                 
-                o_act_we     <= 1'b0;       // this is a default case; do not write unless the converter says the output is valid
+                o_act_we     <= 1'b0;       // this is a default case; do not write unless the psc says the output is valid
                 if (i_psc_valid) begin
                     // When the condition is met, the psc has produced a valid serial activation on this cycle, so we need to write
                     // it to the destination activation RAM at the base index for this tile + numbers already written in this tile.
                     o_act_we <= 1'b1;                       // overrides default case above. 
-                    r_store_count <= r_store_count + 1'b1;  // counter tracking the number of writes during this cycle
                     
                     // we need to check if r_store_count has reached the number of outputs in this tile
                     if (r_store_count == r_outputs_this_tile - 1'b1) begin
@@ -310,11 +309,18 @@ always_ff @(posedge i_clk) begin
 
                         // now we need to decide if we should move to the next tile or the next layer
                         if (r_store_base_idx + r_outputs_this_tile >= r_num_outputs) begin  // we advance layers if we have completely populated the destination activation RAM 
-                            r_curr_state <= S_ADVANCE_LAYER;
+                            // check if we have done last computation. r_layer_idx = 0: input->layer1, r_layer_idx = 1: layer1->layer2, r_layer_idx=2: layer2->output.
+                            if (r_layer_idx == NUM_LAYERS-2)    // because of above, if we are on r_layer_idx = NUM_LAYERS-2, then we have no more layers to transition to.
+                                r_curr_state <= S_OUTPUT;
+                            else 
+                                r_curr_state <= S_ADVANCE_LAYER;
                         end
                         else begin
                             r_curr_state <= S_ADVANCE_TILE;
                         end
+                    end
+                    else begin
+                        r_store_count <= r_store_count + 1'b1;  // still have some more serial outputs remaining in this tile, so incrmeent the counter. 
                     end
                 end
 
@@ -360,14 +366,10 @@ always_ff @(posedge i_clk) begin
                 r_store_count    <= '0;
                 r_store_base_idx <= '0;
 
-                // update activation-bank selection
-                r_src_layer_sel  <= r_dst_layer_sel;
-                r_dst_layer_sel  <= ~r_dst_layer_sel;   // or however you are alternating RAMs
-
                 r_curr_state     <= S_LOAD_MEM;
             end
 
-            S_OUTPUT begin
+            S_OUTPUT: begin
                 
             end
 
