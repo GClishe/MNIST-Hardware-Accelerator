@@ -12,10 +12,11 @@ module Control_Unit # (
     input i_out_valid,            // signal from PE indicating completion of MAC, bias, and RELU. PE output should be read only when OUT_VALID is high
 
     // control signals for process engines
-    output o_clear_acc,   // clear accumulator
-    output o_mac_en,      // enable MAC operation
-    output o_bias_en,     // enables bias computation
-    output o_apply_act,   // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
+    output o_clear_acc,     // clear accumulators
+    output o_mac_en,        // enable MAC operation
+    output o_bias_en,       // enables bias computation
+    output o_apply_act,     // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
+    output o_current_state  // signal for top module. describes what state the machine is currently in 
 );
 
 typedef enum logic [3:0] {          // defines a named type `state`, encoded in 4 bits
@@ -32,7 +33,32 @@ typedef enum logic [3:0] {          // defines a named type `state`, encoded in 
         S_BROADCAST     = 4'd10     
     } state_t;
 
-state_t r_state;  // declaring r_state register with type state_t
+state_t r_curr_state;  // declaring r_state register with type state_t
 
+always_ff @(posedge i_clk) begin
+
+    if (i_rst == 1) begin
+        // Put reset logic here
+    end
+    else begin
+        // state machine core logic goes here
+        case (r_curr_state)
+            S_START:
+            S_CLEAR:
+            S_IDLE         
+            S_LOAD_MEM:     
+            S_MAC:          
+            S_BIAS:         
+            S_ACTIVATE:     
+            S_STORE:        
+            S_ADVANCE_TILE: 
+            S_ADVANCE_LAYER:
+            S_BROADCAST:   
+        endcase
+    end
+
+end
+
+assign o_current_state <= r_curr_state;         // o_current_state asynchonously tied to r_curr_state
 
 endmodule
