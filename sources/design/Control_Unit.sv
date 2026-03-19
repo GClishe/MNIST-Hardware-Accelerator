@@ -135,6 +135,7 @@ always_ff @(posedge i_clk) begin
         r_MAC_counter <= '0;     // resetting the MAC counter to 0
         o_rst <= 1;             // when global reset is applied to control unit, the control unit will also broadcast a reset to the process engines
         o_mac_en <= 0;
+        r_tile_idx <= '0;       // resetting tile idx before S_LOAD_MEM uses it for the first time
     end
     else begin
         // state machine core logic goes here
@@ -145,6 +146,7 @@ always_ff @(posedge i_clk) begin
             S_CLEAR: begin
                 o_rst <= 1'b1;             // reset is broadcasted to all PEs
                 r_curr_state <= S_IDLE;
+                r_tile_idx <= '0;
             end
             S_IDLE: begin
                 o_rst <= 1'b0;          // de-assert PE reset
@@ -310,6 +312,23 @@ always_ff @(posedge i_clk) begin
 
             end     
             S_ADVANCE_TILE: begin
+                o_clear_acc    <= 1'b0;
+                o_mac_en       <= 1'b0;
+                o_bias_en      <= 1'b0;
+                o_apply_act    <= 1'b0;
+                o_act_re       <= 1'b0;
+                o_act_we       <= 1'b0;
+                o_wgt_re       <= 1'b0;
+                o_bias_re      <= 1'b0;
+                o_psc_shift_en <= 1'b0;
+
+                r_tile_idx <= r_tile_idx + 1'b1;        // increment tile count/ advance to next tile within same layer
+
+                // resetting some signals so next computation has correct behavior
+                r_in_idx         <= '0;
+                r_MAC_counter    <= '0;
+                r_store_count    <= '0;
+                r_curr_state <= S_LOAD_MEM;
                 
             end
             S_ADVANCE_LAYER: begin
@@ -322,6 +341,7 @@ always_ff @(posedge i_clk) begin
 
 end
 
+//asynchronous/combinational assignments
 assign o_current_state = r_curr_state;         // o_current_state asynchonously tied to r_curr_state
 assign o_act_idx = r_in_idx;
 assign o_wgt_idx = r_weight_base_idx + r_in_idx;    // address in weight memory where value is fixed depends on the weight base index (which itself depends on the tile index) and with r_in_idx
