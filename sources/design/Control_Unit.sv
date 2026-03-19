@@ -25,7 +25,9 @@ module Control_Unit # (
     output logic o_mac_en,        // enable MAC operation
     output logic o_bias_en,       // enables bias computation
     output logic o_apply_act,     // applies RELU and clamps accumulator output (after biasing) to 8 bits unsigned. 
-    output logic [3:0] o_current_state  // signal for top module. describes what state the machine is currently in 
+    output logic [3:0] o_current_state,  // signal for top module. describes what state the machine is currently in 
+    output logic [16:0] o_act_idx,        // address of activation memory (independent of which activation bank we are reading from) from which we read during MAC 
+    output logic o_act_re                // read enable for activation memory. Broadcast high during MAC state
 );
 
 typedef enum logic [3:0] {          // defines a named type `state`, encoded in 4 bits
@@ -33,18 +35,20 @@ typedef enum logic [3:0] {          // defines a named type `state`, encoded in 
         S_CLEAR         = 4'd1,     // broadcasts reset signal to PEs. Also resets all counters 
         S_IDLE          = 4'd2,     // Select layer index 0 so that LOAD_MEM will load input activations. When input activations done loading in memory, advance to LOAD_MEM
         S_LOAD_MEM      = 4'd3,     // set/reset memory addresses for reading and writing
-        S_MAC           = 4'd4,     // MAC operation commences
-        S_BIAS          = 4'd5,     // BIAS operation
-        S_ACTIVATE      = 4'd6,     // actiavtion operation
-        S_STORE         = 4'd7,     // activations stored to memory at layer index i+1. Parallel -> serial conversion so that activations stored in correct order
-        S_ADVANCE_TILE  = 4'd8,     // if the activations stored in layer i+1 is less than the number expected, advance the tile (do NOT increment layer index) and proceed to LOAD_MEM
-        S_ADVANCE_LAYER = 4'd9,     // if activations store in layer i+1 is equal to number expected, advance layer (increment layer index) and proceed to LOAD_MEM
-        S_BROADCAST     = 4'd10     
+        S_BROADCAST     = 4'd4,     
+        S_MAC           = 4'd5,     // MAC operation commences
+        S_BIAS          = 4'd6,     // BIAS operation
+        S_ACTIVATE      = 4'd7,     // actiavtion operation
+        S_STORE         = 4'd8,     // activations stored to memory at layer index i+1. Parallel -> serial conversion so that activations stored in correct order
+        S_ADVANCE_TILE  = 4'd9,     // if the activations stored in layer i+1 is less than the number expected, advance the tile (do NOT increment layer index) and proceed to LOAD_MEM
+        S_ADVANCE_LAYER = 4'd10,     // if activations store in layer i+1 is equal to number expected, advance layer (increment layer index) and proceed to LOAD_MEM
+        S_OUTPUT        = 4'd11
     } state_t;
 
-state_t r_curr_state;                               // declaring r_state register with type state_t
+state_t r_curr_state;                       // declaring r_state register with type state_t
 
-logic [$clog2(NUM_LAYERS)-1:0] r_layer_idx;         // signal used to determine which activation memory bank the PE will read from
+logic [$clog2(NUM_LAYERS)-1:0] r_layer_idx; // signal used to determine which activation memory bank the PE will read from
+logic [16:0] r_MAC_counter;                 // counts number of mac operations that have occured while in S_MAC state. Needs to be large enough to accomodate the max layer size (probably the input layer)
 
 //TODO dynamically size the registers below. some of them depend on parameters not yet (as of 3/18) finalized, such as number of neurons in hidden layers
 logic [15:0] r_tile_idx;                            
@@ -60,7 +64,9 @@ always_ff @(posedge i_clk) begin
     if (i_rst == 1) begin
         r_curr_state <= S_START;
         r_layer_idx <= '0;       // this is technically not required because this value will be set anyways when we move to idle state, but it doesn't hurt either.
+        r_MAC_counter <= '0     // resetting the MAC counter to 0
         o_rst <= 1;             // when global reset is applied to control unit, the control unit will also broadcast a reset to the process engines
+        o_mac_en <= 0;
     end
     else begin
         // state machine core logic goes here
@@ -76,8 +82,8 @@ always_ff @(posedge i_clk) begin
                     r_curr_state <= LOAD_MEM;       // moving to LOAD_MEM when the input activations have all been written into memory
                 end
             S_LOAD_MEM:
-                // in this state, we prepare the next compute pass by resetting write and read addresses, in part depending on which layer we are reading from/writing to.
-
+                // in this state, we prepare the next compute pass by resetting write and read addresses, selecting source/destination layers, and priming first activation read
+                
                 r_in_idx <= '0;         // reset the per-pass input counter so MAC starts at the first source activation. Remember that the same activation is sent to all PEs
 
                 // defining source and destination layers. These values determine which RAM instance will be read from and written to, respectively
@@ -98,6 +104,10 @@ always_ff @(posedge i_clk) begin
                         r_num_inputs    <= LAYER2_SIZE;
                         r_num_outputs   <= OUTPUT_LAYER_SIZE;   
                     end 
+                    default: begin
+                        r_num_inputs  <= '0;
+                        r_num_outputs <= '0;
+                    end     
                 endcase
             
                 /*We cannot always set the destination address (where we will write activations in S_STORE) to 0, since a single PE pass may not be enough to complete a layer. Remember
@@ -109,9 +119,37 @@ always_ff @(posedge i_clk) begin
                 in this state.*/
                 r_store_base_idx <= r_tile_idx * NUM_PE;    
 
-                o_clear_acc   <= 1'b1;  // we also want to clear the accumulators, since we are about to start a new dot product
-                r_curr_state <= S_MAC;  // move to S_MAC     
-            S_MAC:          
+                r_MAC_counter <= '0;    // reset MAC counter for new dot-product pass
+
+                o_act_re <= 1'b1;   // priming activation RAM read. Since RAM is synchronous, the data for address 0 will not be available until the next clock cycle.
+                o_mac_en <= 1'b0;   // ensuring mac enable is not on yet
+
+                r_curr_state <= S_BROADCAST; // move to broadcast state
+
+            S_BROADCAST: begin
+                // one-cycle state to prime the RAM. Address 0 was already presented during the last state and by the end of this cycle, the activation data for index 0 is available
+                o_clear_acc <= 1'b0;        // stop clearing accumulators now that the new pass is about to begin
+                o_act_re <= 1'b1;           // keep activation read enable asserted so streaming can continue
+
+                o_mac_en <= 1'b1;       // enable MAC on next cycle so that MAC can begin as soon as we enter MAC state 
+                r_curr_state <= S_MAC;  // move into the real MAC loop
+            end
+            S_MAC: begin
+                // each cycle in this state corresponds to one multiply-accumulate
+                // note that mac enable and activation read enable signals are still on from the broadcast state
+                if (r_MAC_counter == r_num_inputs - 1'b1) begin
+                    // perform the final MAC for the current dot product and move on to biasing
+                    r_MAC_counter <= '0;
+                    o_mac_en <= 1'b0;
+                    o_act_re <= 1'b0;
+                    r_curr_state <= S_BIAS;
+                end
+                else begin
+                    // Advance to next activation for next cycle's MAC
+                    r_MAC_counter <= r_MAC_counter + 1'b1;
+                    r_in_idx      <= r_in_idx + 1'b1;
+                end
+            end
             S_BIAS:         
             S_ACTIVATE:     
             S_STORE:        
@@ -126,5 +164,6 @@ always_ff @(posedge i_clk) begin
 end
 
 assign o_current_state <= r_curr_state;         // o_current_state asynchonously tied to r_curr_state
+assign o_act_idx <= r_in_idx;
 
 endmodule
