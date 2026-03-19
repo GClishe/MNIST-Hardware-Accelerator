@@ -1,5 +1,40 @@
 `timescale 1ns/1ps
 
+/*
+The key to understanding this code below absolutely requires an understanding of how the memory banks are split up, so consider the following situation: Suppose we have a source layer 
+that has 10 activations, a_0 thru a_9, and a destination layer that has 13 neurons y_0 thru y_12. We have 4 process engines, one activation RAM for the source layer, 4 weight RAMs (one for 
+each process engine), and 4 bias RAMs (one for each process engine). Thus, each tile has a size of 4. The final tile is padded with 0s when corresponding process engines should not be producing a result
+that is read to memory (note: this will occur, since tile 0 will compute activations y0 thru y3, tile 1 will compute y4 thru y7, tile 2 will compute y8 thru y11, and tile 3 will compute y12. The other
+three process engines cannot be inactive in tile 3 due to SIMD architecture, so whatever it computes will not be written to the destination layer's RAM. We want to use the same weight and bias address for
+all four PEs at all times, so we need to pad the weight RAMs with 0s in locations where we would otherwise prefer to have the PEs inactive). The following vectors represent the contents of all RAMs under the
+scenario outlined above: 
+
+ACT_RAM  = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9]
+
+WGT_RAM0 = [weights of neuron 0][weights of neuron 4][weights of neuron 8][weights of neuron 12]      <-- NOTICE no padding in last tile; PE0 will be computing y12,
+WGT_RAM1 = [weights of neuron 1][weights of neuron 5][weights of neuron 9][0...0]                     <-- NOTICE the last tile is padded with 0s, since PE 1 will not be computing anything useful (there is no y13)
+WGT_RAM2 = [weights of neuron 2][weights of neuron 6][weights of neuron 10][0...0]                    <-- NOTICE the last tile is padded with 0s, since PE 2 will not be computing anything useful (there is no y14)
+WGT_RAM3 = [weights of neuron 3][weights of neuron 7][weights of neuron 11][0...0]                    <-- NOTICE the last tile is padded with 0s, since PE 3 will not be computing anything useful (there is no y15)
+
+BIAS_RAM0 = [b0, b4, b8,  b12]
+BIAS_RAM1 = [b1, b5, b9,  0]            <-- NOTICE biases are similarly padded with 0s
+BIAS_RAM2 = [b2, b6, b10, 0]
+BIAS_RAM3 = [b3, b7, b11, 0]
+
+Note that the WGT RAMs show four separate arrays in the example above; that is erroneous. I only separated them into different sets of brackets for the sake of readability. All banks would store these values
+contiguously. Also note that our example will have more layers after the y layer. The ACT_RAM for the next stage would then be the vector [y0 thru y12]. However, the WGT and BIAS RAMs would be the same! It's just
+that for these RAMs, the weights for the next layer would be placed after the weights shown above. This means that we will have WGT RAMs that look something like
+[weights of neuron i]...[weights of neuron j][0...0][weights of neuron k][weights of neuron l][0..0].
+
+Notice that the 0 padding for each layer still comes before the weights of the next layer. This is necessary for us to be able to share the same RAM address for all WGT RAMs. 
+
+In terms of how that address is determined, it is easy to see that since the activations are a different vector for each layer, the address will always start at 0 for a layer and increment until all values in ACT_RAM
+have been read, at which point we know that the layer is done. Nothing special there. However, the WGT RAM is slighly more complex. Let's look at WGT_RAM0 as an example. For the first layer and first tile, (each set of square brackets represents a new tile) the base address is 0. But then when its time to compute the second tile, the base address needs to be tile_idx (1) * LAYER1_LENGTH (10). This is why the S_LOAD_MEM state 
+sets a base weight address to tile_idx*LAYER_SIZE. The bias base address is a little easier, since each MAC cycle only uses one bias. In other words, there is only one bias per tile. This means we can use the tile_idx as the bias address. Notice that o_bias_idx is asynchronously tied to r_tile_idx (in other words, they are two words for the same net).
+
+*/
+
+
 module Control_Unit # (
     parameter int ACT_W = 8,      // size of the activations
     parameter int WGT_W = 8,      // size of the weights
@@ -29,7 +64,9 @@ module Control_Unit # (
     output logic [15:0] o_act_idx,        // address of activation memory (independent of which activation bank we are reading from) from which we read during MAC 
     output logic o_act_re,                // read enable for activation memory. Broadcast high during MAC state
     output logic o_wgt_re,                // read enable for weight memory
-    output logic [15:0] o_wgt_idx         // address for weight memory from which we read during MAC
+    output logic [15:0] o_wgt_idx,         // address for weight memory from which we read during MAC
+    output logic o_bias_re,               // bias RAM read-enable
+    output logic o_bias_idx               // bias RAM address (same for all biases)
 );
 
 typedef enum logic [3:0] {          // defines a named type `state`, encoded in 4 bits
@@ -61,6 +98,7 @@ logic [15:0] r_num_inputs;
 logic [15:0] r_num_outputs;
 logic [15:0] r_store_base_idx;
 logic [15:0] r_weight_base_idx;
+logic [15:0] r_bias_base_idx;
 
 always_ff @(posedge i_clk) begin
 
@@ -158,16 +196,23 @@ always_ff @(posedge i_clk) begin
                     o_act_re <= 1'b0;
                     o_wgt_re <= 1'b0;
 
+                    o_bias_re  <= 1'b1;     // prime bias RAM for next cycle
                     r_curr_state <= S_BIAS;
                 end
                 else begin
                     // Advance to next activation for next cycle's MAC
                     r_MAC_counter <= r_MAC_counter + 1'b1;
                     r_in_idx      <= r_in_idx + 1'b1;
+                    o_bias_re     <= 1'b0;              // keeping bias read enable low because we are not ready to prime the bias RAM yet.
                 end
             end
             S_BIAS: begin
-                
+                o_mac_en    <= 1'b0;
+                o_act_re    <= 1'b0;
+                o_wgt_re    <= 1'b0;
+                o_bias_re   <= 1'b0;  
+                o_bias_en   <= 1'b1;
+                r_curr_state <= S_ACTIVATE
             end       
             S_ACTIVATE: begin
                 
@@ -191,5 +236,6 @@ end
 assign o_current_state = r_curr_state;         // o_current_state asynchonously tied to r_curr_state
 assign o_act_idx = r_in_idx;
 assign o_wgt_idx = r_weight_base_idx + r_in_idx;    // address in weight memory where value is fixed depends on the weight base index (which itself depends on the tile index) and with r_in_idx
+assign o_bias_idx = r_tile_idx;                     // address in bias memory
 
 endmodule
