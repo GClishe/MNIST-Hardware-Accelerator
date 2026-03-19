@@ -143,11 +143,13 @@ always_ff @(posedge i_clk) begin
             S_START: begin
                 r_curr_state <= S_CLEAR;
             end
+            
             S_CLEAR: begin
                 o_rst <= 1'b1;             // reset is broadcasted to all PEs
                 r_curr_state <= S_IDLE;
                 r_tile_idx <= '0;
             end
+
             S_IDLE: begin
                 o_rst <= 1'b0;          // de-assert PE reset
                 r_layer_idx <= '0;      // initializes r_layer_idx to 0 (the input activations) before moving to LOAD_MEM
@@ -155,6 +157,7 @@ always_ff @(posedge i_clk) begin
                     r_curr_state <= S_LOAD_MEM;       // moving to LOAD_MEM when the input activations have all been written into memory
                 end
             end
+
             S_LOAD_MEM: begin
                 // in this state, we prepare the next compute pass by resetting write and read addresses, selecting source/destination layers, and priming first activation read
 
@@ -229,6 +232,7 @@ always_ff @(posedge i_clk) begin
 
                 r_curr_state <= S_BROADCAST; // move to broadcast state
             end 
+
             S_BROADCAST: begin
                 // one-cycle state to prime the RAM. Address 0 was already presented during the last state and by the end of this cycle, the activation data for index 0 is available. same for the weight data
                 o_clear_acc <= 1'b0;        // stop clearing accumulators now that the new pass is about to begin
@@ -237,6 +241,7 @@ always_ff @(posedge i_clk) begin
                 o_mac_en <= 1'b1;       // enable MAC on next cycle so that MAC can begin as soon as we enter MAC state 
                 r_curr_state <= S_MAC;  // move into the real MAC loop
             end
+            
             S_MAC: begin
                 // each cycle in this state corresponds to one multiply-accumulate
                 // note that mac enable and activation read enable signals are still on from the broadcast state
@@ -258,6 +263,7 @@ always_ff @(posedge i_clk) begin
                     o_bias_re     <= 1'b0;              // keeping bias read enable low because we are not ready to prime the bias RAM yet.
                 end
             end
+
             S_BIAS: begin
                 o_mac_en    <= 1'b0;
                 o_act_re    <= 1'b0;
@@ -265,7 +271,8 @@ always_ff @(posedge i_clk) begin
                 o_bias_re   <= 1'b0;  
                 o_bias_en   <= 1'b1;
                 r_curr_state <= S_ACTIVATE;
-            end       
+            end   
+
             S_ACTIVATE: begin
                 o_bias_en <= 1'b0;
                 o_apply_act <= 1'b1;
@@ -274,6 +281,7 @@ always_ff @(posedge i_clk) begin
                 // it might be reasonable to only move states when the PE raises its o_out_valid flag, but currently this happens at the same time as o_apply_act, so I wont worry about this for now. 
                 r_curr_state <= S_STORE;
             end   
+
             S_STORE: begin
                 // there should be no process engine arithmetic active anymore
                 o_clear_acc <= 1'b0;
@@ -310,7 +318,8 @@ always_ff @(posedge i_clk) begin
                     end
                 end
 
-            end     
+            end   
+
             S_ADVANCE_TILE: begin
                 o_clear_acc    <= 1'b0;
                 o_mac_en       <= 1'b0;
@@ -324,7 +333,6 @@ always_ff @(posedge i_clk) begin
 
                 r_tile_idx <= r_tile_idx + 1'b1;        // increment tile count/ advance to next tile within same layer
 
-                // resetting some signals so next computation has correct behavior
                 r_in_idx         <= '0;
                 r_MAC_counter    <= '0;
                 r_store_count    <= '0;
@@ -332,6 +340,34 @@ always_ff @(posedge i_clk) begin
                 
             end
             S_ADVANCE_LAYER: begin
+                o_clear_acc    <= 1'b0;
+                o_mac_en       <= 1'b0;
+                o_bias_en      <= 1'b0;
+                o_apply_act    <= 1'b0;
+                o_act_re       <= 1'b0;
+                o_act_we       <= 1'b0;
+                o_wgt_re       <= 1'b0;
+                o_bias_re      <= 1'b0;
+                o_psc_shift_en <= 1'b0;
+
+                // advance to next layer
+                r_layer_idx      <= r_layer_idx + 1'b1;
+                r_tile_idx       <= '0;     // tiles start from 0 in each layer. Base addresses are computed in LOAD_MEM according to this convention. 
+
+                // clear per-layer/per-tile counters
+                r_in_idx         <= '0;
+                r_MAC_counter    <= '0;
+                r_store_count    <= '0;
+                r_store_base_idx <= '0;
+
+                // update activation-bank selection
+                r_src_layer_sel  <= r_dst_layer_sel;
+                r_dst_layer_sel  <= ~r_dst_layer_sel;   // or however you are alternating RAMs
+
+                r_curr_state     <= S_LOAD_MEM;
+            end
+
+            S_OUTPUT begin
                 
             end
 
