@@ -97,7 +97,7 @@ always_ff @(posedge i_clk) begin
                     o_result <= r_acc[ACT_W-1:0]; // take the least significant bits of r_acc, since we know the full value can fit into that many bits.  
                 end
             end
-            o_out_valid <= 1'b1
+            o_out_valid <= 1'b1;
         end
     end
 end
