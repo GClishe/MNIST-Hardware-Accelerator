@@ -44,7 +44,8 @@ module Control_Unit # (
     parameter int INPUT_LAYER_SIZE = 784,   // number of activations in the input layer
     parameter int LAYER1_SIZE = 50,         // number of activations in the first hidden layer
     parameter int LAYER2_SIZE = 50,         // number of activations in the second hidden layer
-    parameter int OUTPUT_LAYER_SIZE = 10    // number of activations in the output layer
+    parameter int OUTPUT_LAYER_SIZE = 10,    // number of activations in the output layer
+    parameter int MAX_LAYER_SIZE = 784      // max value of the layer sizes
 
 ) (
     input logic i_clk,
@@ -77,6 +78,16 @@ module Control_Unit # (
     output logic [15:0] o_wgt_idx,         // address for weight memory from which we read during MAC
     output logic o_bias_re,               // bias RAM read-enable
     output logic [15:0] o_bias_idx,               // bias RAM address (same for all biases)
+
+    // activation layer selectors
+    output logic [$clog2(NUM_LAYERS)-1:0] o_src_layer_sel,  // source layer select for selecting correct input activation RAM
+    output logic [$clog2(NUM_LAYERS)-1:0] o_dst_layer_sel,  // destination layer select for selecting correct output activation RAM
+
+    output logic                    o_out_re,               // read enable for the output activation RAM
+    output logic [$clog2(MAX_LAYER_SIZE)-1:0] o_out_idx,    // address for the output activation ram
+    output logic                    o_out_valid,            // output data is valid
+    output logic                    o_done                  // output data is done streaming
+
 );
 // count the number of tiles in each layer. Helpful for determining base weight addresses in the LOAD_MEM state
 localparam int L0_NUM_TILES = (LAYER1_SIZE       + NUM_PE - 1) / NUM_PE;
@@ -126,6 +137,11 @@ logic [15:0] r_bias_base_idx;
 logic [15:0] r_store_count;
 logic [15:0] r_outputs_this_tile;
 
+// output registers
+logic [$clog2(MAX_LAYER_SIZE)-1:0] r_out_count;     // which final output index is currently being read
+logic [$clog2(MAX_LAYER_SIZE)-1:0] r_out_addr;      // output address
+logic                              r_out_pending;   // tracks that a read has been issued in the last cycle, so the data should be valid now.
+
 
 always_ff @(posedge i_clk) begin
 
@@ -136,10 +152,44 @@ always_ff @(posedge i_clk) begin
         o_rst <= 1;             // when global reset is applied to control unit, the control unit will also broadcast a reset to the process engines
         o_mac_en <= 0;
         r_tile_idx <= '0;       // resetting tile idx before S_LOAD_MEM uses it for the first time
+        r_in_idx           <= '0;
+        r_src_layer_sel    <= '0;
+        r_dst_layer_sel    <= '0;
+        r_num_inputs       <= '0;
+        r_num_outputs      <= '0;
+        r_store_base_idx   <= '0;
+        r_weight_base_idx  <= '0;
+        r_bias_base_idx    <= '0;
+        r_store_count      <= '0;
+        r_outputs_this_tile <= '0;
+        r_out_count        <= '0;
+        r_out_addr         <= '0;
+        r_out_pending      <= 1'b0;
+
+        o_out_re      <= 1'b0;
+        o_out_valid   <= 1'b0;
+        o_done        <= 1'b0;
     end
     else begin
         // state machine core logic goes here
-        case (r_curr_state)
+        // all control outputs default to a safe state. each state only overrides what it needs. 
+        o_rst          <= 1'b0;
+        o_clear_acc    <= 1'b0;
+        o_mac_en       <= 1'b0;
+        o_bias_en      <= 1'b0;
+        o_apply_act    <= 1'b0;
+        o_psc_shift_en <= 1'b0;
+
+        o_act_re       <= 1'b0;
+        o_act_we       <= 1'b0;
+        o_wgt_re       <= 1'b0;
+        o_bias_re      <= 1'b0;
+
+        o_out_re       <= 1'b0;
+        o_out_valid    <= 1'b0;
+        o_done         <= 1'b0;
+
+        case (r_curr_state) begin
             S_START: begin
                 r_curr_state <= S_CLEAR;
             end
@@ -148,6 +198,8 @@ always_ff @(posedge i_clk) begin
                 o_rst <= 1'b1;             // reset is broadcasted to all PEs
                 r_curr_state <= S_IDLE;
                 r_tile_idx <= '0;
+                r_out_count   <= '0;
+                r_out_pending <= 1'b0;
             end
 
             S_IDLE: begin
@@ -264,11 +316,7 @@ always_ff @(posedge i_clk) begin
                 end
             end
 
-            S_BIAS: begin
-                o_mac_en    <= 1'b0;
-                o_act_re    <= 1'b0;
-                o_wgt_re    <= 1'b0;
-                o_bias_re   <= 1'b0;  
+            S_BIAS: begin 
                 o_bias_en   <= 1'b1;
                 r_curr_state <= S_ACTIVATE;
             end   
@@ -278,27 +326,17 @@ always_ff @(posedge i_clk) begin
                 o_apply_act <= 1'b1;
                 r_store_count <= '0;    // initializing signal used in next state
 
-                // it might be reasonable to only move states when the PE raises its o_out_valid flag, but currently this happens at the same time as o_apply_act, so I wont worry about this for now. 
                 r_curr_state <= S_STORE;
             end   
 
             S_STORE: begin
                 // there should be no process engine arithmetic active anymore
-                o_clear_acc <= 1'b0;
-                o_mac_en    <= 1'b0;
-                o_bias_en   <= 1'b0;
-                o_apply_act <= 1'b0;
-                o_act_re    <= 1'b0;
-                o_wgt_re    <= 1'b0;
-                o_bias_re   <= 1'b0;
-
                 o_psc_shift_en <= 1'b1;     // tell the parallel->serial converter (psc) to begin shifting
                 
-                o_act_we     <= 1'b0;       // this is a default case; do not write unless the psc says the output is valid
                 if (i_psc_valid) begin
                     // When the condition is met, the psc has produced a valid serial activation on this cycle, so we need to write
                     // it to the destination activation RAM at the base index for this tile + numbers already written in this tile.
-                    o_act_we <= 1'b1;                       // overrides default case above. 
+                    o_act_we <= 1'b1;  
                     
                     // we need to check if r_store_count has reached the number of outputs in this tile
                     if (r_store_count == r_outputs_this_tile - 1'b1) begin
@@ -310,10 +348,16 @@ always_ff @(posedge i_clk) begin
                         // now we need to decide if we should move to the next tile or the next layer
                         if (r_store_base_idx + r_outputs_this_tile >= r_num_outputs) begin  // we advance layers if we have completely populated the destination activation RAM 
                             // check if we have done last computation. r_layer_idx = 0: input->layer1, r_layer_idx = 1: layer1->layer2, r_layer_idx=2: layer2->output.
-                            if (r_layer_idx == NUM_LAYERS-2)    // because of above, if we are on r_layer_idx = NUM_LAYERS-2, then we have no more layers to transition to.
+                            if (r_layer_idx == NUM_LAYERS-2) begin    // because of above, if we are on r_layer_idx = NUM_LAYERS-2, then we have no more layers to transition to.
+                                //clear counters and control for output layer.
+                                r_out_count   <= '0;        
+                                r_out_addr    <= '0;
+                                r_out_pending <= 1'b0;
                                 r_curr_state <= S_OUTPUT;
-                            else 
+                            end
+                            else big
                                 r_curr_state <= S_ADVANCE_LAYER;
+                            end
                         end
                         else begin
                             r_curr_state <= S_ADVANCE_TILE;
@@ -327,16 +371,6 @@ always_ff @(posedge i_clk) begin
             end   
 
             S_ADVANCE_TILE: begin
-                o_clear_acc    <= 1'b0;
-                o_mac_en       <= 1'b0;
-                o_bias_en      <= 1'b0;
-                o_apply_act    <= 1'b0;
-                o_act_re       <= 1'b0;
-                o_act_we       <= 1'b0;
-                o_wgt_re       <= 1'b0;
-                o_bias_re      <= 1'b0;
-                o_psc_shift_en <= 1'b0;
-
                 r_tile_idx <= r_tile_idx + 1'b1;        // increment tile count/ advance to next tile within same layer
 
                 r_in_idx         <= '0;
@@ -346,16 +380,6 @@ always_ff @(posedge i_clk) begin
                 
             end
             S_ADVANCE_LAYER: begin
-                o_clear_acc    <= 1'b0;
-                o_mac_en       <= 1'b0;
-                o_bias_en      <= 1'b0;
-                o_apply_act    <= 1'b0;
-                o_act_re       <= 1'b0;
-                o_act_we       <= 1'b0;
-                o_wgt_re       <= 1'b0;
-                o_bias_re      <= 1'b0;
-                o_psc_shift_en <= 1'b0;
-
                 // advance to next layer
                 r_layer_idx      <= r_layer_idx + 1'b1;
                 r_tile_idx       <= '0;     // tiles start from 0 in each layer. Base addresses are computed in LOAD_MEM according to this convention. 
@@ -370,7 +394,26 @@ always_ff @(posedge i_clk) begin
             end
 
             S_OUTPUT: begin
-                
+                // data from previous cycle's read is valid now
+                if (r_out_pending) begin
+                    o_out_valid   <= 1'b1;
+                    r_out_pending <= 1'b0;
+                end
+
+                // launch next read if more outputs remain
+                if (r_out_count < OUTPUT_LAYER_SIZE) begin
+                    o_out_re       <= 1'b1;
+                    r_out_addr     <= r_out_count;
+                    r_out_count    <= r_out_count + 1'b1;
+                    r_out_pending  <= 1'b1;
+                end
+                else begin
+                    // all reads have been launched; wait for last datum to emerge
+                    if (!r_out_pending)
+                        o_done <= 1'b1;
+                end
+
+                r_curr_state <= S_OUTPUT;
             end
 
             default: r_curr_state <= S_START;
@@ -385,5 +428,8 @@ assign o_act_idx = r_in_idx;
 assign o_wgt_idx = r_weight_base_idx + r_in_idx;    // address in weight memory where value is fixed depends on the weight base index (which itself depends on the tile index) and with r_in_idx
 assign o_bias_idx = r_bias_base_idx + r_tile_idx;   // address in bias memory. equal to the base index plus the tile value we are on
 assign o_store_idx = r_store_base_idx + r_store_count; //address of activation memory in which to write is the base idx (r_tile_idx * NUM_PE) + nums stored in a store cycle
+assign o_out_idx = r_out_addr;                     // address for output ram
+assign o_src_layer_sel = r_src_layer_sel;          // source activation RAM
+assign o_dst_layer_sel = r_dst_layer_sel;           // destination activation RAM
 
 endmodule

@@ -7,7 +7,7 @@ It will take the activations computed from process engines as an input and will 
 The top module will then direct the outputs to a particular activation RAM 
 */
 
-module Parallel_Series_Converter (
+module Parallel_Series_Converter #(
     parameter NUM_PE,
     parameter ACT_W
 ) (
@@ -33,7 +33,10 @@ always_ff @(posedge i_clk) begin
             r_main[i] <= '0;
         end
     end
-    else if (&i_PE_valid) begin  // checking if all bits in i_PE_valid are 1. in which case, we are writing to the register. note that this will cause data overwriting if these signals are high for more than 1 cycle
+    // Checking if all bits in i_PE_valid are 1. in which case, we are writing to the register. note that this will cause data overwriting if these signals are high for more than 1 cycle.
+    // Also, keep in mind that if we check all i_PE_valid, then we must make sure that even when process engines are computing garbage data with the padded 0s, they still must output a 
+    // data valid signal.
+    else if (&i_PE_valid) begin  
         r_main <= i_activations;       // load the register
         count <= NUM_PE;
         o_activation_valid  <= 1'b0;
