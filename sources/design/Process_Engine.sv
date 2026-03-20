@@ -64,6 +64,8 @@ always_ff @(posedge i_clk) begin
     end
 
     else begin
+        o_out_valid <= 1'b0;    // default state of out_valid. Will be overwritten if necessary
+
         // if we want to start a new dot product, we need to clear the accumulator, which we want to control with a separate signal from the global reset
         if (i_clear_acc) begin
             r_acc <= '0;  // fill the accumulator with 0s    
@@ -74,32 +76,28 @@ always_ff @(posedge i_clk) begin
         // if we want a MAC operation to take place, we need the i_mac_en signal to be high
         else if (i_mac_en) begin
             r_acc <= r_acc + r_mult_val_resized;
-            o_out_valid <= 0;
         end
 
         // when the MAC is done with a dot product, the accumulator needs to add a bias 
         else if (i_bias_en) begin
             // acc, i_bias_in are of unequal widths. i_bias_in is narrower, so I extend it to the size of ACC_W. I do this by prepending the sign of i_bias_in ACC_W - BIAS_W times. 
             r_acc <= r_acc + {{(ACC_W-BIAS_W){i_bias_in[BIAS_W-1]}}, i_bias_in};   
-            o_out_valid <= 0;
         end
         
         // after bias is applied, the RELU will be activated, and positive numbers above 8 bits will be clamped to 8'b11111111
         else if (i_apply_act) begin
             if (r_acc < 0) begin
                 o_result <= '0;
-                o_out_valid <= 1;
             end
             else begin
                 if (r_acc > r_max_act_resized) begin
                     o_result <= MAX_ACT;
-                    o_out_valid <= 1;
                 end
                 else begin
                     o_result <= r_acc[ACT_W-1:0]; // take the least significant bits of r_acc, since we know the full value can fit into that many bits.  
-                    o_out_valid <= 1;
                 end
             end
+            o_out_valid <= 1'b1
         end
     end
 end
