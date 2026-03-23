@@ -3,7 +3,7 @@
 According to the memory specs document, every memory bank will have the same structure.
 */
 
-module memory_module_base #(
+module RAM_2Port #(
     parameter int WIDTH = 8,         //size of each element stored in the RAM
     parameter int DEPTH = 16,        //amount of elements to be stored in the RAM, for this trial, picked 16. 
                                      //This will changed based on what bank we are designing
