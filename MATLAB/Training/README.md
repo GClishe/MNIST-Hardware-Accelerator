@@ -1,1 +1,1 @@
-A lot of these scripts require the contents of the mnist.zip file to be extracted in the same directory as the script.
+A lot of these scripts require the contents of the mnist.mat file. To get this file download the testMNIST.zip and trainingMNIST.zip and run the Recover_MNIST_from_github_Script.m; this will regenerate the MNIST.mat file from the two zip files. This is necessary to get around github's file size limitations.
