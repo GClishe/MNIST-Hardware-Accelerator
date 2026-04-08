@@ -1,2 +1,3 @@
 This is where the file with the quantized weights with the best performance, matching our model specification, can be found.
 The current model gets an accuracy = 96.44% when tested with the *MNIST Net 7 Test Quantization Script*.
+The net file is the full network structure which is useful when interacting with MATLAB. The weights file is just the weights, can be easily read from MATLAB, it has the format weights, biases, weights, biases, weights, ... in layer order, first to last. The net file is quantized but uses a mask to make it single percision so it can still train, the weights file directly dispalys the quantized int8 values without any mask.
