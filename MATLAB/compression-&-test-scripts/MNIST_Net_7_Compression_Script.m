@@ -45,7 +45,7 @@ imgDatastore = arrayDatastore(testArray.images, 'IterationDimension', 4);
 labelDatastore = arrayDatastore(testArray.labels, 'IterationDimension', 1);
 combinedTestDS = combine(imgDatastore, labelDatastore);
 
-load('MLP2-4-01-26.mat'); % Load the pretrained, but not yet compressed, network of your choice.
+load('MLP3-4-3-26.mat'); % Load the pretrained, but not yet compressed, network of your choice.
 
 miniStore = minibatchqueue(imgDatastore, MiniBatchFormat="SSBC");
 [netProjected,info] = compressNetworkUsingProjection(trainedNet,miniStore);
