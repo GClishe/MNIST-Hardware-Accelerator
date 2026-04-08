@@ -1,0 +1,1 @@
+Directory for compression and testing scripts, some compression scripts may include some additional training but they should not include initial training. Any script including initial training of a blank network should live in the training directory.

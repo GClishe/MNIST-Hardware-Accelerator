@@ -1,0 +1,2 @@
+This is also a projected model, it tests to see if there is much gained from an additional layer.
+This network has an accuracy = 96.64% when tested with the *MNIST Net 7 Test Quantization Script*. Currently accuracy is the main metric being considered, and the difference (0.2%) is not sufficient to take on an entire additional neuron layer. At some point it may be wise to compair their confusion matrices to see if there is much difference there.
