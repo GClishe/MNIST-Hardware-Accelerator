@@ -28,7 +28,7 @@ testArray.labels = categorical(test.labels);
 % Used to make the ditheredMNIST.mat file, no need to repeat the process.
     % Saved for propriety.
 % ditheredStruct.trainingImages = trainingArray.images;
-% ditheredStruct.trainingLables = trainingArray.labels;
+% ditheredStruct.trainingLabels = trainingArray.labels;
 % ditheredStruct.testImages = testArray.images;
 % ditheredStruct.testLabels = testArray.labels;
 % save('ditheredMNIST.mat', "ditheredStruct", '-mat');
