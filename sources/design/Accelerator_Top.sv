@@ -3,13 +3,13 @@
 module Accelerator_Top #(
     parameter int ACT_W             = 8,
     parameter int WGT_W             = 8,
-    parameter int BIAS_W            = 8,
-    parameter int NUM_PE            = 4,
+    parameter int BIAS_W            = 32,
+    parameter int NUM_PE            = 5,
     parameter int NUM_LAYERS        = 4,
 
     parameter int INPUT_LAYER_SIZE  = 784,
-    parameter int LAYER1_SIZE       = 50,
-    parameter int LAYER2_SIZE       = 50,
+    parameter int LAYER1_SIZE       = 40,
+    parameter int LAYER2_SIZE       = 30,
     parameter int OUTPUT_LAYER_SIZE = 10,
     parameter int MAX_LAYER_SIZE    = 784,
 
