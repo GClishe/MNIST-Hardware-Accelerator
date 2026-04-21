@@ -51,7 +51,7 @@ module Control_Unit # (
     input logic i_clk,
     input logic i_rst,                  // global reset. this triggers a reset in the CU, during which a reset is also applied to the PEs. o_rst is a local reset signal sent from the CU to the PE
     input logic i_out_valid,            // signal from PE indicating completion of MAC, bias, and RELU. PE output should be read only when OUT_VALID is high
-    input logic i_activations_ready,    // signal broadcasted when input activation memory bank is full and ready to be broadcasted (causes transition from S_IDLE to S_LOAD_MEM)
+    input logic i_start,                // signal broadcasted when input activation memory bank is full and computation should begin (causes transition from S_IDLE to S_LOAD_MEM)
     input logic i_psc_valid,            // signal from the parallel->series conver (psc) indicating a valid output (o_activation_valid on psc module)
 
     output logic [3:0] o_current_state,  // signal for top module. describes what state the machine is currently in 
@@ -205,7 +205,7 @@ always_ff @(posedge i_clk) begin
             S_IDLE: begin
                 o_rst <= 1'b0;          // de-assert PE reset
                 r_layer_idx <= '0;      // initializes r_layer_idx to 0 (the input activations) before moving to LOAD_MEM
-                if (i_activations_ready == 1) begin
+                if (i_start == 1) begin
                     r_curr_state <= S_LOAD_MEM;       // moving to LOAD_MEM when the input activations have all been written into memory
                 end
             end

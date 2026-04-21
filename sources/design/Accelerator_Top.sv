@@ -22,8 +22,8 @@ module Accelerator_Top #(
     input  logic i_clk, 
     input  logic i_rst,
 
-    // external indication that input activation memory has been filled
-    input  logic i_activations_ready,
+    // external indication that input activation memory has been filled and computation should begin
+    input  logic i_start,
 
     // external output port for final network outputs
     output logic [ACT_W-1:0] o_out_data,    
@@ -114,7 +114,7 @@ module Accelerator_Top #(
         .i_clk(i_clk),
         .i_rst(i_rst),
         .i_out_valid(cu_i_out_valid),
-        .i_activations_ready(i_activations_ready),
+        .i_start(i_start),
         .i_psc_valid(psc_activation_valid),
 
         .o_current_state(cu_current_state),
