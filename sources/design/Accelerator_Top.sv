@@ -3,7 +3,7 @@
 module Accelerator_Top #(
     parameter int ACT_W             = 8,
     parameter int WGT_W             = 8,
-    parameter int BIAS_W            = 32,
+    parameter int BIAS_W            = 8,
     parameter int NUM_PE            = 5,
     parameter int NUM_LAYERS        = 4,
 
@@ -15,8 +15,8 @@ module Accelerator_Top #(
 
     // Memory depths
     parameter int ACT_RAM_DEPTH     = MAX_LAYER_SIZE,   // Max activation size is the max layer size
-    parameter int WGT_RAM_DEPTH     = 100000,           // todo fix this number and next one once NN is finalized
-    parameter int BIAS_RAM_DEPTH    = 1024
+    parameter int WGT_RAM_DEPTH     = 6572,           
+    parameter int BIAS_RAM_DEPTH    = 16
 )(
     // Global clock and reset
     input  logic i_clk, 
