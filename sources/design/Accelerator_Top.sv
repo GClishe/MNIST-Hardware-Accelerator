@@ -38,6 +38,27 @@ module Accelerator_Top #(
     localparam int LAYER_SEL_W  = $clog2(NUM_LAYERS);
     localparam int OUT_ADDR_W   = $clog2(MAX_LAYER_SIZE);
 
+    // defining file paths for weights, biases, and input activation
+    localparam string INPUT_ACTIVATIONS = "A_random.mem";
+    function automatic string get_wgt_file (int idx);
+        // declaring a packed array for weight files would work, but I have never used functions in SV before, so I'd like to, even if it is overkill in this instance. 
+        case (idx)
+            0: return "W_PE1";
+            1: return "W_PE2";
+            2: return "W_PE3";
+            3: return "W_PE4";
+            4: return "W_PE5";
+        endcase
+    endfunction
+    function automatic string get_bias_file (int idx);
+        case (idx)
+            0: return "B_PE1";
+            1: return "B_PE2";
+            2: return "B_PE3";
+            3: return "B_PE4";
+            4: return "B_PE5";
+        endcase
+    endfunction
     // Declaring control unit i/o interconnects
     logic [3:0] cu_current_state;   
 
@@ -191,7 +212,8 @@ module Accelerator_Top #(
         for (lyr = 0; lyr < NUM_LAYERS; lyr++) begin : g_act_ram    // create an array of activation RAMs, one per layer
             RAM_2Port #(
                 .WIDTH(ACT_W),
-                .DEPTH(ACT_RAM_DEPTH)
+                .DEPTH(ACT_RAM_DEPTH),
+                .INIT_FILE((lyr == 0) ? INPUT_ACTIVATIONS : "")     // on lyr=0 (input layer), load INPUT_ACTIVATIONS. Else, do no loading. 
             ) u_act_ram (
                 // each RAM receives same clock, address, and data, but not the same write enable.
                 .i_Wr_Clk(i_clk),
@@ -224,7 +246,8 @@ module Accelerator_Top #(
         for (pe = 0; pe < NUM_PE; pe++) begin : g_wgt_ram       // each PE has its own weight RAM, so we index weight RAMs by pe number
             RAM_2Port #(
                 .WIDTH(WGT_W),
-                .DEPTH(WGT_RAM_DEPTH)
+                .DEPTH(WGT_RAM_DEPTH),
+                .INIT_FILE( get_wgt_file(pe) )
             ) u_wgt_ram (
                 .i_Wr_Clk(i_clk),
                 .i_Wr_Addr('0),         // weight RAM is read-only
@@ -246,7 +269,8 @@ module Accelerator_Top #(
         for (pe = 0; pe < NUM_PE; pe++) begin : g_bias_ram
             RAM_2Port #(
                 .WIDTH(BIAS_W),
-                .DEPTH(BIAS_RAM_DEPTH)
+                .DEPTH(BIAS_RAM_DEPTH),
+                .INIT_FILE( get_bias_file(pe) )
             ) u_bias_ram (
                 .i_Wr_Clk(i_clk),
                 .i_Wr_Addr('0),
