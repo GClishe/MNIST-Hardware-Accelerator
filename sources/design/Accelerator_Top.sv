@@ -16,7 +16,10 @@ module Accelerator_Top #(
     // Memory depths
     parameter int ACT_RAM_DEPTH     = MAX_LAYER_SIZE,   // Max activation size is the max layer size
     parameter int WGT_RAM_DEPTH     = 6572,           
-    parameter int BIAS_RAM_DEPTH    = 16
+    parameter int BIAS_RAM_DEPTH    = 16,
+
+    // input activation file path
+    parameter string INPUT_ACTIVATIONS = "A_random.mem"
 )(
     // Global clock and reset
     input  logic i_clk, 
@@ -38,8 +41,7 @@ module Accelerator_Top #(
     localparam int LAYER_SEL_W  = $clog2(NUM_LAYERS);
     localparam int OUT_ADDR_W   = $clog2(MAX_LAYER_SIZE);
 
-    // defining file paths for weights, biases, and input activation
-    localparam string INPUT_ACTIVATIONS = "A_random.mem";
+    // defining file paths for weights and biases
     function automatic string get_wgt_file (int idx);
         // declaring a packed array for weight files would work, but I have never used functions in SV before, so I'd like to, even if it is overkill in this instance. 
         case (idx)
