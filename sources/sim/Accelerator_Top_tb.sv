@@ -96,6 +96,7 @@ i_start = 1'b1; // causing i_start transition on negedge for sake of clarity
 
 
 repeat (500) @(posedge i_clk);
+$finish;
 end
 
 
