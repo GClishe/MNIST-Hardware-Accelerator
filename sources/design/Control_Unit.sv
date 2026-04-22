@@ -189,7 +189,7 @@ always_ff @(posedge i_clk) begin
         o_out_valid    <= 1'b0;
         o_done         <= 1'b0;
 
-        case (r_curr_state) begin
+        case (r_curr_state)
             S_START: begin
                 r_curr_state <= S_CLEAR;
             end
