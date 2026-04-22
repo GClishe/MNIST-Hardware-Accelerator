@@ -355,7 +355,7 @@ always_ff @(posedge i_clk) begin
                                 r_out_pending <= 1'b0;
                                 r_curr_state <= S_OUTPUT;
                             end
-                            else big
+                            else begin
                                 r_curr_state <= S_ADVANCE_LAYER;
                             end
                         end
