@@ -32,9 +32,41 @@ logic             o_done;
 
 // CU probes
 logic [3:0] cu_current_state;                                        // probe for current state of state machine
-logic [ACT_W-1:0] act_ram1_probe [0:39];                             // probe for contents of activation RAM 1
-logic [ACT_W-1:0] act_ram2_probe [0:29];
-logic [ACT_W-1:0] act_ram3_probe [0:9];
+logic [ACT_W-1:0] act_ram0_probe [0:INPUT_LAYER_SIZE-1];             // probe for memory addresses for input activations
+logic [ACT_W-1:0] act_ram1_probe [0:LAYER1_SIZE-1];
+logic [ACT_W-1:0] act_ram2_probe [0:LAYER2_SIZE-1];
+logic [ACT_W-1:0] act_ram3_probe [0:OUTPUT_LAYER_SIZE-1];
+
+// PE1 probes
+logic [ACT_W-1:0] probe_pe_act_in;
+logic signed [WGT_W-1:0] probe_pe0_wgt_in;
+logic signed [BIAS_W-1:0] probe_pe0_bias_in;
+logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe0_acc;
+logic [ACT_W-1:0] probe_pe0_result;
+logic             probe_pe0_out_valid;
+
+// RAM probes
+logic [ACT_W-1:0] probe_act_rd_data0;
+logic             probe_act_rd_dv0;
+
+logic [WGT_W-1:0] probe_wgt0_rd_data;
+logic             probe_wgt0_rd_dv;
+
+logic [BIAS_W-1:0] probe_bias0_rd_data;
+logic              probe_bias0_rd_dv;
+
+logic [15:0] probe_act0_rd_addr;        // looking at read addresses to see if the address is the problem
+logic [15:0] probe_wgt0_rd_addr;
+logic [15:0] probe_bias0_rd_addr;
+
+logic [ACT_W-1:0] probe_act0_mem0;      // looking at memory locations to see if improper memory storing is the problem
+logic [ACT_W-1:0] probe_act0_mem1;
+
+logic [WGT_W-1:0] probe_wgt0_mem0;
+logic [WGT_W-1:0] probe_wgt0_mem1;
+
+logic [BIAS_W-1:0] probe_bias0_mem0;
+logic [BIAS_W-1:0] probe_bias0_mem1;
 
 // Instantiating DUT
 Accelerator_Top #(
@@ -61,21 +93,63 @@ Accelerator_Top #(
     .o_done(o_done)
 );
 
+// CU probe assignments
 assign cu_current_state = dut.cu_current_state;
 
+// PE probe assignments
+assign probe_pe_act_in       = dut.pe_act_in;
+assign probe_pe0_wgt_in      = dut.pe_wgt_in[0];
+assign probe_pe0_bias_in     = dut.pe_bias_in[0];
+
+assign probe_pe0_acc         = dut.g_pe[0].u_pe.r_acc;
+
+assign probe_pe0_result      = dut.pe_result[0];
+assign probe_pe0_out_valid   = dut.pe_out_valid_vec[0];
+
+// RAM probe assignments
+assign probe_act_rd_data0 = dut.act_ram_rd_data[0];
+assign probe_act_rd_dv0   = dut.act_ram_rd_dv[0];
+
+assign probe_wgt0_rd_data = dut.wgt_ram_rd_data[0];
+assign probe_wgt0_rd_dv   = dut.wgt_ram_rd_dv[0];
+
+assign probe_bias0_rd_data = dut.bias_ram_rd_data[0];
+assign probe_bias0_rd_dv   = dut.bias_ram_rd_dv[0];
+
+assign probe_act0_rd_addr  = dut.g_act_ram[0].u_act_ram.rd_addr;
+assign probe_wgt0_rd_addr  = dut.g_wgt_ram[0].u_wgt_ram.rd_addr;
+assign probe_bias0_rd_addr = dut.g_bias_ram[0].u_bias_ram.rd_addr;
+
+assign probe_act0_mem0 = dut.g_act_ram[0].u_act_ram.mem[0];
+assign probe_act0_mem1 = dut.g_act_ram[0].u_act_ram.mem[1];
+
+assign probe_wgt0_mem0 = dut.g_wgt_ram[0].u_wgt_ram.mem[0];
+assign probe_wgt0_mem1 = dut.g_wgt_ram[0].u_wgt_ram.mem[1];
+
+assign probe_bias0_mem0 = dut.g_bias_ram[0].u_bias_ram.mem[0];
+assign probe_bias0_mem1 = dut.g_bias_ram[0].u_bias_ram.mem[1];
+
+
 // assigning elements in activation memory probe to corresponding locations in activation RAMs.
-genvar addr_p;
+genvar a0, a1, a2, a3;
 generate
-    for (addr_p = 0; addr_p < ACT_RAM_DEPTH; addr_p++) begin : g_act_ram_probes
-        //act_ram_probe[addr_p] assigned to activation RAM data at location addr_p
-        // dut.g_act_ram[lyr_p] indexes the generate for loop inside the accelerator_top module that is used to instantiate the RAM_2Port module.
-        // At the loop location named dut.g_act_ram[lyr], we have instantiated a corresponding RAM_2Port instance named u_act_ram (see Accelerator_Top.sv).
-        // Inside the instance named u_act_ram in the lyr iteration of the for loop, there exists an internal signal called mem (see RAM_2Port.sv)
-        // We want to access the value at the addr_p index of that internal `mem` signal. 
-        // NOTE: THIS IS NOT READING DATA THROUGH THE RAM INTERFACE. THIS IS DIRECTLY PROBING THE INTERNAL STRUCTURE OF THE RAM_2Port INSTANCE
-        assign act_ram1_probe[addr_p] = dut.g_act_ram[1].u_act_ram.mem[addr_p];
-        assign act_ram2_probe[addr_p] = dut.g_act_ram[2].u_act_ram.mem[addr_p];
-        assign act_ram3_probe[addr_p] = dut.g_act_ram[3].u_act_ram.mem[addr_p];
+    //act_ram_probe[addr_p] assigned to activation RAM data at location addr_p
+    // dut.g_act_ram[lyr_p] indexes the generate for loop inside the accelerator_top module that is used to instantiate the RAM_2Port module.
+    // At the loop location named dut.g_act_ram[lyr], we have instantiated a corresponding RAM_2Port instance named u_act_ram (see Accelerator_Top.sv).
+    // Inside the instance named u_act_ram in the lyr iteration of the for loop, there exists an internal signal called mem (see RAM_2Port.sv)
+    // We want to access the value at the addr_p index of that internal `mem` signal. 
+    // NOTE: THIS IS NOT READING DATA THROUGH THE RAM INTERFACE. THIS IS DIRECTLY PROBING THE INTERNAL STRUCTURE OF THE RAM_2Port INSTANCE
+    for (a0 = 0; a0 < INPUT_LAYER_SIZE; a0++) begin : g_probe_ram0
+        assign act_ram0_probe[a0] = dut.g_act_ram[0].u_act_ram.mem[a0];
+    end
+    for (a1 = 0; a1 < LAYER1_SIZE; a1++) begin : g_probe_ram1
+        assign act_ram1_probe[a1] = dut.g_act_ram[1].u_act_ram.mem[a1];
+    end
+    for (a2 = 0; a2 < LAYER2_SIZE; a2++) begin : g_probe_ram2
+        assign act_ram2_probe[a2] = dut.g_act_ram[2].u_act_ram.mem[a2];
+    end
+    for (a3 = 0; a3 < OUTPUT_LAYER_SIZE; a3++) begin : g_probe_ram3
+        assign act_ram3_probe[a3] = dut.g_act_ram[3].u_act_ram.mem[a3];
     end
 endgenerate
 
@@ -98,7 +172,7 @@ i_start = 1'b1; // causing i_start transition on negedge for sake of clarity
  i_start = 1'b0;
 
 
-repeat (500) @(posedge i_clk);
+repeat (8000) @(posedge i_clk);
 $finish;
 end
 

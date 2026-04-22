@@ -45,20 +45,20 @@ module Accelerator_Top #(
     function automatic string get_wgt_file (input int idx);
         // declaring a packed array for weight files would work, but I have never used functions in SV before, so I'd like to, even if it is overkill in this instance. 
         case (idx)
-            0: return "W_PE1";
-            1: return "W_PE2";
-            2: return "W_PE3";
-            3: return "W_PE4";
-            4: return "W_PE5";
+            0: return "W_PE1.mem";
+            1: return "W_PE2.mem";
+            2: return "W_PE3.mem";
+            3: return "W_PE4.mem";
+            4: return "W_PE5.mem";
         endcase
     endfunction
     function automatic string get_bias_file (input int idx);
         case (idx)
-            0: return "B_PE1";
-            1: return "B_PE2";
-            2: return "B_PE3";
-            3: return "B_PE4";
-            4: return "B_PE5";
+            0: return "B_PE1.mem";
+            1: return "B_PE2.mem";
+            2: return "B_PE3.mem";
+            3: return "B_PE4.mem";
+            4: return "B_PE5.mem";
         endcase
     endfunction
     // Declaring control unit i/o interconnects
@@ -210,18 +210,23 @@ module Accelerator_Top #(
 
     // ==============================INSTANTIATING ACTIVATION RAMS===================================================================================
     localparam int act_ram_depths [0:3] = '{784, 40, 30, 10};       // variable array depths for each layer. 
+    localparam int act_addr_widths [0:3] = '{$clog2(784), $clog2(40), $clog2(30), $clog2(10) }
     genvar lyr;
     generate
         for (lyr = 0; lyr < NUM_LAYERS; lyr++) begin : g_act_ram    // create an array of activation RAMs, one per layer
             RAM_2Port #(
                 .WIDTH(ACT_W),
                 .DEPTH(act_ram_depths[lyr]),
+                .ADDR_W(act_addr_widths[lyr]),
                 .INIT_FILE((lyr == 0) ? INPUT_ACTIVATIONS : "")     // on lyr=0 (input layer), load INPUT_ACTIVATIONS. Else, do no loading. 
             ) u_act_ram (
                 // each RAM receives same clock, address, and data, but not the same write enable.
                 .clk(i_clk),
                 .wr_addr(cu_store_idx[ACT_ADDR_W-1:0]),
-                .wr_dv((cu_dst_layer_sel == lyr) && cu_act_we && psc_activation_valid),   //only write if the CU says writing is enabled and if PSC activation output is valid, and only to RAM whose layer index equals cu_dst_layer_sel
+                // Drive the write strobe from the PSC valid directly so the RAM samples the activation on the same edge
+                // that produced it. The CU's store enable is one cycle later than the PSC data and is not the timing
+                // reference for the write itself.
+                .wr_dv((cu_dst_layer_sel == lyr) && psc_activation_valid),   // only write to the destination RAM for the current layer
                 .wr_data(psc_activation),
 
                 // choose between two possible read addresses -- cu_out_idx or cu_act_idx
@@ -234,7 +239,7 @@ module Accelerator_Top #(
                 // RAM lyr should perform a read if either the RAM is currently selected source layer (and CU wants to read) or if this RAM is the selected layer for output reading (and CU wants to read final outputs)
                 .rd_en(
                     ((cu_src_layer_sel == lyr) && cu_act_re) ||
-                    ((cu_dst_layer_sel == lyr) && cu_out_re)
+                    ((lyr == NUM_LAYERS-1) && cu_out_re)
                 ),
                 .rd_dv(act_ram_rd_dv[lyr]),       
                 .rd_data(act_ram_rd_data[lyr]) // each RAM gets its own slot in act_ram_rd_data array
@@ -248,6 +253,7 @@ module Accelerator_Top #(
             RAM_2Port #(
                 .WIDTH(WGT_W),
                 .DEPTH(WGT_RAM_DEPTH),
+                .ADDR_W(WGT_ADDR_W),
                 .INIT_FILE( get_wgt_file(pe) )
             ) u_wgt_ram (
                 .clk(i_clk),
@@ -270,6 +276,7 @@ module Accelerator_Top #(
             RAM_2Port #(
                 .WIDTH(BIAS_W),
                 .DEPTH(BIAS_RAM_DEPTH),
+                .ADDR_W(BIAS_ADDR_W),
                 .INIT_FILE( get_bias_file(pe) )
             ) u_bias_ram (
                 .clk(i_clk),
