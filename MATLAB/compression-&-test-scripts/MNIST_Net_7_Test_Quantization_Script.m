@@ -28,7 +28,7 @@ testArray.labels = categorical(test.labels);
 clearvars tempTrainingImages tempTestImages;
 toc % Stop counting ellapsed seconds
 
-load('quantizedNet7_7.mat'); % load the name of quantized network so it can be tested
+load('quantizedNet7_9.mat'); % load the name of quantized network so it can be tested
 
 accuracy = testnet(quantizedNet, testArray.images, testArray.labels, "accuracy")
 
@@ -38,9 +38,17 @@ confusionchart(testArray.labels, YTest);
 
 val = quantizationDetails(quantizedNet);
 layers = table2cell(val.QuantizedLearnables(:, 3));
-allWeights = cellfun(@storedInteger, layers, 'UniformOutput', false); % The int8 representations of the quantized network's weights without the rest of the structure.
+layers2 = layers;
+for i=1:3
+    layers2{2*i} = fi(layers{2*i}, 1, 8);
+end
+allWeights = cellfun(@storedInteger, layers2, 'UniformOutput', false); % The int8 representations of the quantized network's weights without the rest of the structure.
                                                                         %  Useful for exporting the weights & biases. Pattern weight, bias, weight, bias, ...
-whos('mat')
+for i=1:6
+    hex{i} = arrayfun(@(x) string(dec2hex(x)), allWeights{i}); % new block to produce a hex representation of the allWeights data.
+end
+
+whos('allWeights');
 
 delete(gcp("nocreate"));
 
