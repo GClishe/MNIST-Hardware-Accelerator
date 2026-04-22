@@ -27,6 +27,9 @@ module RAM_2Port #(
     logic [WIDTH-1:0] mem [0:DEPTH-1];      //This is the memory array itself
     
     initial begin
+        rd_data = '0;
+        rd_dv = 1'b0;
+        
         if (INIT_FILE != "") begin
             $readmemh(INIT_FILE, mem);      // if the user passes an init file, the RAM is populated with values according to the contents of the file.
         end
