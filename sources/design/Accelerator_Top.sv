@@ -210,12 +210,14 @@ module Accelerator_Top #(
 
     // ==============================INSTANTIATING ACTIVATION RAMS===================================================================================
     localparam int act_ram_depths [0:3] = '{784, 40, 30, 10};       // variable array depths for each layer. 
+    localparam int act_addr_widths [0:3] = '{$clog2(784), $clog2(40), $clog2(30), $clog2(10) }
     genvar lyr;
     generate
         for (lyr = 0; lyr < NUM_LAYERS; lyr++) begin : g_act_ram    // create an array of activation RAMs, one per layer
             RAM_2Port #(
                 .WIDTH(ACT_W),
                 .DEPTH(act_ram_depths[lyr]),
+                .ADDR_W(act_addr_widths[lyr]),
                 .INIT_FILE((lyr == 0) ? INPUT_ACTIVATIONS : "")     // on lyr=0 (input layer), load INPUT_ACTIVATIONS. Else, do no loading. 
             ) u_act_ram (
                 // each RAM receives same clock, address, and data, but not the same write enable.
@@ -251,6 +253,7 @@ module Accelerator_Top #(
             RAM_2Port #(
                 .WIDTH(WGT_W),
                 .DEPTH(WGT_RAM_DEPTH),
+                .ADDR_W(WGT_ADDR_W),
                 .INIT_FILE( get_wgt_file(pe) )
             ) u_wgt_ram (
                 .clk(i_clk),
@@ -273,6 +276,7 @@ module Accelerator_Top #(
             RAM_2Port #(
                 .WIDTH(BIAS_W),
                 .DEPTH(BIAS_RAM_DEPTH),
+                .ADDR_W(BIAS_ADDR_W),
                 .INIT_FILE( get_bias_file(pe) )
             ) u_bias_ram (
                 .clk(i_clk),
