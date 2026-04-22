@@ -49,6 +49,22 @@ module Process_Engine # (
     output logic                        o_out_valid      // flag that is raised when the output can and should be read
 );
 
+// i_act_in has ACT_FRAC fractional bits
+// i_wgt_in has WGT_FRAC fractional bits
+// therefore, the raw product has PROD_FRAC fractional bits
+localparam int PROD_FRAC = ACT_FRAC + WGT_FRAC;
+
+// output has same fractional format as activations
+localparam int OUT_FRAC = ACT_FRAC
+
+// to convert accumulator/product scale back into activation scale, we shift right by RESCALE_SHIFT bits
+localparam RESCALE_SHIFT = PROD_FRAC - OUT_FRAC;
+
+
+
+
+
+
 localparam int MULT_W = ACT_W + WGT_W + 1;                // width of multiplier. adding 1 because casting unsigned i_act_in to signed requires additional bit
 localparam int W1 = MULT_W + $clog2(NUM_MACS);            // potential width of the accumulator 
 localparam int W2 = BIAS_W;
