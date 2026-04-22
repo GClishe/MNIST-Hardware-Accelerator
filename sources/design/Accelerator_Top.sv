@@ -218,27 +218,25 @@ module Accelerator_Top #(
                 .INIT_FILE((lyr == 0) ? INPUT_ACTIVATIONS : "")     // on lyr=0 (input layer), load INPUT_ACTIVATIONS. Else, do no loading. 
             ) u_act_ram (
                 // each RAM receives same clock, address, and data, but not the same write enable.
-                .i_Wr_Clk(i_clk),
-                .i_Wr_Addr(cu_store_idx[ACT_ADDR_W-1:0]),
-                .i_Wr_DV((cu_dst_layer_sel == lyr) && cu_act_we && psc_activation_valid),   //only write if the CU says writing is enabled and if PSC activation output is valid, and only to RAM whose layer index equals cu_dst_layer_sel
-                .i_Wr_Data(psc_activation),
-
-                .i_Rd_Clk(i_clk),
+                .clk(i_clk),
+                .wr_addr(cu_store_idx[ACT_ADDR_W-1:0]),
+                .wr_dv((cu_dst_layer_sel == lyr) && cu_act_we && psc_activation_valid),   //only write if the CU says writing is enabled and if PSC activation output is valid, and only to RAM whose layer index equals cu_dst_layer_sel
+                .wr_data(psc_activation),
 
                 // choose between two possible read addresses -- cu_out_idx or cu_act_idx
-                .i_Rd_Addr(
+                .rd_addr(
                     (cu_out_re && (cu_src_layer_sel == (NUM_LAYERS-2))) // if we are in output read mode and the source layer is the second to last layer, then use cu_out_idx
                     ? cu_out_idx[ACT_ADDR_W-1:0]
                     : cu_act_idx[ACT_ADDR_W-1:0]
                 ),
 
                 // RAM lyr should perform a read if either the RAM is currently selected source layer (and CU wants to read) or if this RAM is the selected layer for output reading (and CU wants to read final outputs)
-                .i_Rd_En(
+                .rd_en(
                     ((cu_src_layer_sel == lyr) && cu_act_re) ||
                     ((cu_dst_layer_sel == lyr) && cu_out_re)
                 ),
-                .o_Rd_DV(act_ram_rd_dv[lyr]),       
-                .o_Rd_Data(act_ram_rd_data[lyr]) // each RAM gets its own slot in act_ram_rd_data array
+                .rd_dv(act_ram_rd_dv[lyr]),       
+                .rd_data(act_ram_rd_data[lyr]) // each RAM gets its own slot in act_ram_rd_data array
             );
         end
     endgenerate
@@ -251,16 +249,15 @@ module Accelerator_Top #(
                 .DEPTH(WGT_RAM_DEPTH),
                 .INIT_FILE( get_wgt_file(pe) )
             ) u_wgt_ram (
-                .i_Wr_Clk(i_clk),
-                .i_Wr_Addr('0),         // weight RAM is read-only
-                .i_Wr_DV(1'b0),         // weight RAM is read-only
-                .i_Wr_Data('0),         // weight RAM is read-only
+                .clk(i_clk),
+                .wr_addr('0),         // weight RAM is read-only
+                .wr_dv(1'b0),         // weight RAM is read-only
+                .wr_data('0),         // weight RAM is read-only
 
-                .i_Rd_Clk(i_clk),
-                .i_Rd_Addr(cu_wgt_idx[WGT_ADDR_W-1:0]),
-                .i_Rd_En(cu_wgt_re),                // CU tells weight RAM when read should occur. 
-                .o_Rd_DV(wgt_ram_rd_dv[pe]),        // this signal is connected to wg_ram_rd_dv, but wg_ram_rd_dv is currently unused (as of 3/24)
-                .o_Rd_Data(wgt_ram_rd_data[pe])     // data read from weight RAM. Cast into signed integer and fed into respective PE
+                .rd_addr(cu_wgt_idx[WGT_ADDR_W-1:0]),
+                .rd_en(cu_wgt_re),                // CU tells weight RAM when read should occur. 
+                .rd_dv(wgt_ram_rd_dv[pe]),        // this signal is connected to wg_ram_rd_dv, but wg_ram_rd_dv is currently unused (as of 3/24)
+                .rd_data(wgt_ram_rd_data[pe])     // data read from weight RAM. Cast into signed integer and fed into respective PE
             );
         end
     endgenerate
@@ -274,16 +271,15 @@ module Accelerator_Top #(
                 .DEPTH(BIAS_RAM_DEPTH),
                 .INIT_FILE( get_bias_file(pe) )
             ) u_bias_ram (
-                .i_Wr_Clk(i_clk),
-                .i_Wr_Addr('0),
-                .i_Wr_DV(1'b0),
-                .i_Wr_Data('0),
+                .clk(i_clk),
+                .wr_addr('0),
+                .wr_dv(1'b0),
+                .wr_data('0),
 
-                .i_Rd_Clk(i_clk),
-                .i_Rd_Addr(cu_bias_idx[BIAS_ADDR_W-1:0]),
-                .i_Rd_En(cu_bias_re),
-                .o_Rd_DV(bias_ram_rd_dv[pe]),
-                .o_Rd_Data(bias_ram_rd_data[pe])
+                .rd_addr(cu_bias_idx[BIAS_ADDR_W-1:0]),
+                .rd_en(cu_bias_re),
+                .rd_dv(bias_ram_rd_dv[pe]),
+                .rd_data(bias_ram_rd_data[pe])
             );
         end
     endgenerate
