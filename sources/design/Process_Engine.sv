@@ -41,8 +41,8 @@ module Process_Engine # (
     output logic                        o_out_valid      // flag that is raised when the output can and should be read
 );
 
-
-localparam int W1 = ACT_W + WGT_W + $clog2(NUM_MACS) + 1; // potential width of the accumulator; adding 1 beacuse casting unsigned i_act_in to signed requires additional bit. 
+localparam int MULT_W = ACT_W + WGT_W + 1;                // width of multiplier. adding 1 because casting unsigned i_act_in to signed requires additional bit
+localparam int W1 = MULT_W + $clog2(NUM_MACS);            // potential width of the accumulator 
 localparam int W2 = BIAS_W;
 localparam int ACC_W = ((W1 > W2) ? W1 : W2) + 1;         // Accumulator width depends on how large the bias width is relative to the rest. If bias width dominates, it determines the accumulator width. 
 localparam logic [ACT_W-1:0] MAX_ACT = {ACT_W{1'b1}};     // the maximum possible magnitude of an ACT_W-sized unsigned integer. {N{val}} concatenates val with itself N times
