@@ -83,12 +83,19 @@ always #5 i_clk = ~i_clk;
 
 initial begin
 //resetting 
-i_start = 0;
-i_rst = 1;
+i_start = 1'b0;
+i_rst = 1'b1;
 repeat (2) @(posedge i_clk);
-i_rst = 0;
-repeat (5) @(posedge i_clk);
+i_rst = 1'b0;
+repeat (5) @(negedge i_clk);
 
+// rasing start flag
+i_start = 1'b1; // causing i_start transition on negedge for sake of clarity
+@(negedge i_clk);
+ i_start = 1'b0;
+
+
+repeat (500) @(posedge i_clk);
 end
 
 
