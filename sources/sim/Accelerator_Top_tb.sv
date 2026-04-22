@@ -32,7 +32,9 @@ logic             o_done;
 
 // CU probes
 logic [3:0] cu_current_state;                                        // probe for current state of state machine
-logic [ACT_W-1:0] act_ram_probe [1:NUM_LAYERS-1][0:ACT_RAM_DEPTH-1]; // probe to read all memory elements of all activation RAMs except the first. act_ram_probe[i][j] contains address j of activation RAM i.
+logic [ACT_W-1:0] act_ram1_probe [0:ACT_RAM_DEPTH-1];                // probe for contents of activation RAM 1
+logic [ACT_W-1:0] act_ram2_probe [0:ACT_RAM_DEPTH-1];
+logic [ACT_W-1:0] act_ram3_probe [0:ACT_RAM_DEPTH-1];
 
 // Instantiating DUT
 Accelerator_Top #(
@@ -62,20 +64,21 @@ Accelerator_Top #(
 assign cu_current_state = dut.cu_current_state;
 
 // assigning elements in activation memory probe to corresponding locations in activation RAMs.
-genvar lyr_p, addr_p;
+genvar addr_p;
 generate
-    for (lyr_p = 1; lyr_p < NUM_LAYERS; lyr_p++) begin : g_act_ram_probe_layer              // for each layer 1, 2, 3 (skips layer 0, the inputs)
-        for (addr_p = 0; addr_p < ACT_RAM_DEPTH; addr_p++) begin : g_act_ram_probe_addr
-            //act_ram_probe[lyr_p][addr_p] assigned to lyr_p'th activation RAM at addr_p location 
-            // dut.g_act_ram[lyr_p] indexes the generate for loop inside the accelerator_top module that is used to instantiate the RAM_2Port module.
-            // At the loop location named dut.g_act_ram[lyr_p], we have instantiated a corresponding RAM_2Port instance named u_act_ram (see Accelerator_Top.sv).
-            // Inside the instance named u_act_ram in the lyr_p iteration of the for loop, there exists an internal signal called mem (see RAM_2Port.sv)
-            // We want to access the value at the addr_p index of that internal `mem` signal. 
-            // NOTE: THIS IS NOT READING DATA THROUGH THE RAM INTERFACE. THIS IS DIRECTLY PROBING THE INTERNAL STRUCTURE OF THE RAM_2Port INSTANCE
-            assign act_ram_probe[lyr_p][addr_p] = dut.g_act_ram[lyr_p].u_act_ram.mem[addr_p];   
-        end
+    for (addr_p = 0; addr_p < ACT_RAM_DEPTH; addr_p++) begin : g_act_ram_probes
+        //act_ram_probe[addr_p] assigned to activation RAM data at location addr_p
+        // dut.g_act_ram[lyr_p] indexes the generate for loop inside the accelerator_top module that is used to instantiate the RAM_2Port module.
+        // At the loop location named dut.g_act_ram[lyr], we have instantiated a corresponding RAM_2Port instance named u_act_ram (see Accelerator_Top.sv).
+        // Inside the instance named u_act_ram in the lyr iteration of the for loop, there exists an internal signal called mem (see RAM_2Port.sv)
+        // We want to access the value at the addr_p index of that internal `mem` signal. 
+        // NOTE: THIS IS NOT READING DATA THROUGH THE RAM INTERFACE. THIS IS DIRECTLY PROBING THE INTERNAL STRUCTURE OF THE RAM_2Port INSTANCE
+        assign act_ram1_probe[addr_p] = dut.g_act_ram[1].u_act_ram.mem[addr_p];
+        assign act_ram2_probe[addr_p] = dut.g_act_ram[2].u_act_ram.mem[addr_p];
+        assign act_ram3_probe[addr_p] = dut.g_act_ram[3].u_act_ram.mem[addr_p];
     end
 endgenerate
+
 
 // creating clock
 initial i_clk = 0;
