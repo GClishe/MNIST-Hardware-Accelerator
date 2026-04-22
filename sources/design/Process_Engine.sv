@@ -26,7 +26,15 @@ module Process_Engine # (
     parameter int ACT_W = 8,
     parameter int WGT_W = 8,
     parameter int BIAS_W = 8,
-    parameter int NUM_MACS = 784                        // number of MAC operations in the dot product. Used to determine ACC_W 
+    parameter int NUM_MACS = 784,                        // number of MAC operations in the dot product. Used to determine ACC_W 
+
+    // fixed point format parameters
+    // all non-sign bits are fractional:
+    // activations: unsigned Q0.8
+    // weights/biases: signed Q1.7
+    parameter int ACT_FRAC = 8,
+    parameter int WGT_FRAC = 7,
+    parameter int BIAS_FRAC = 7
 ) (
     input  logic                        i_clk,
     input  logic                        i_rst,
@@ -41,20 +49,58 @@ module Process_Engine # (
     output logic                        o_out_valid      // flag that is raised when the output can and should be read
 );
 
+// i_act_in has ACT_FRAC fractional bits
+// i_wgt_in has WGT_FRAC fractional bits
+// therefore, the raw product has PROD_FRAC fractional bits
+localparam int PROD_FRAC = ACT_FRAC + WGT_FRAC;
+
+// output has same fractional format as activations
+localparam int OUT_FRAC = ACT_FRAC;
+
+// to convert accumulator/product scale back into activation scale, we shift right by RESCALE_SHIFT bits
+localparam int RESCALE_SHIFT = PROD_FRAC - OUT_FRAC;
+
+// bias must also be aligned to accumulator/product scale before additional
+localparam int BIAS_ALIGN_SHIFT = PROD_FRAC - BIAS_FRAC;
+
 localparam int MULT_W = ACT_W + WGT_W + 1;                // width of multiplier. adding 1 because casting unsigned i_act_in to signed requires additional bit
 localparam int W1 = MULT_W + $clog2(NUM_MACS);            // potential width of the accumulator 
-localparam int W2 = BIAS_W;
+localparam int W2 = BIAS_W + ((BIAS_ALIGN_SHIFT > 0) ? BIAS_ALIGN_SHIFT : 0);
 localparam int ACC_W = ((W1 > W2) ? W1 : W2) + 1;         // Accumulator width depends on how large the bias width is relative to the rest. If bias width dominates, it determines the accumulator width. 
+
+
 localparam logic [ACT_W-1:0] MAX_ACT = {ACT_W{1'b1}};     // the maximum possible magnitude of an ACT_W-sized unsigned integer. {N{val}} concatenates val with itself N times
        
-logic signed [ACC_W-1: 0] r_acc;                // accumulator 
-logic signed [ACC_W-1:0]  r_max_act_resized;     // same magnitude as MAX_ACT, but it needs to be resized to the size of the accumulator for safe comparisons later on
-logic signed [MULT_W-1:0] r_mult_val;           // value from the multiplier
-logic signed [ACC_W-1:0]  r_mult_val_resized;   // same as above, but resized for safe accumulations
+logic signed [ACC_W-1: 0] r_acc;                 // accumulator 
+logic signed [MULT_W-1:0] r_mult_val;            // value from the multiplier
+logic signed [ACC_W-1:0]  r_mult_val_resized;    // same as above, but resized for safe accumulations
+logic signed [ACC_W-1:0]  r_bias_resized;        // sign-extended bias before scaling
+logic signed [ACC_W-1:0]  r_bias_aligned;        // bias aligned to accumulator/product fractional scale
+logic signed [ACC_W-1:0]  r_acc_rescaled;        // accumulator converted back to activation scale for RELU/clamp
 
-assign r_max_act_resized = $signed({{(ACC_W-ACT_W){1'b0}}, MAX_ACT});         // create a set of 0s ACC_W - ACT_W bits wide. Then prepend that to the MAX_ACT value, and cast it to a signed format.
 assign r_mult_val     = $signed({1'b0, i_act_in}) * i_wgt_in;                     // prepend 0 to i_act_in, then cast to a signed integer. Both operands must be signed in order for the result to also be signed. Needs the additional bit to preserve magnitude
-assign r_mult_val_resized = {{(ACC_W-MULT_W){r_mult_val[MULT_W-1]}}, r_mult_val}; // Sign-extend r_mult_val by prepending the sign bit ACC_W - MULT_W times, until r_mult_val has the same size as acc.
+assign r_mult_val_resized = {{ (ACC_W-MULT_W){r_mult_val[MULT_W-1]}}, r_mult_val}; // Sign-extend r_mult_val by prepending the sign bit ACC_W - MULT_W times, until r_mult_val has the same size as acc.
+assign r_bias_resized = {{(ACC_W-BIAS_W){i_bias_in[BIAS_W-1]}}, i_bias_in};        // sign-extend bias to ACC_W
+
+generate    // generate allows me to perform conditional assignments outside of any kind of combinational or sequential block
+    // left or right shift the bias value depending on sign of BIAS_ALIGN_SHIFT
+    if (BIAS_ALIGN_SHIFT >= 0) begin : GEN_BIAS_LEFT_SHIFT
+        assign r_bias_aligned = (r_bias_resized <<< BIAS_ALIGN_SHIFT);    
+    end
+    else begin : GEN_BIAS_RIGHT_SHIFT
+        assign r_bias_aligned = (r_bias_resized >>> (-BIAS_ALIGN_SHIFT));
+    end
+endgenerate
+
+generate
+    if (RESCALE_SHIFT >= 0) begin : GEN_RESCALE_RIGHT_SHIFT
+        // Convert accumulator/product scale back to activation scale.
+        assign r_acc_rescaled = (r_acc >>> RESCALE_SHIFT);
+    end
+    else begin : GEN_RESCALE_LEFT_SHIFT
+        assign r_acc_rescaled = (r_acc <<< (-RESCALE_SHIFT));
+    end
+endgenerate
 
 always_ff @(posedge i_clk) begin
     // handle reset logic
@@ -81,21 +127,22 @@ always_ff @(posedge i_clk) begin
 
         // when the MAC is done with a dot product, the accumulator needs to add a bias 
         else if (i_bias_en) begin
-            // acc, i_bias_in are of unequal widths. i_bias_in is narrower, so I extend it to the size of ACC_W. I do this by prepending the sign of i_bias_in ACC_W - BIAS_W times. 
-            r_acc <= r_acc + {{(ACC_W-BIAS_W){i_bias_in[BIAS_W-1]}}, i_bias_in};   
+            // bias must be aligned to same fractional scale as accumulator before addition
+            r_acc <= r_acc + r_bias_aligned;  
         end
         
         // after bias is applied, the RELU will be activated, and positive numbers above 8 bits will be clamped to 8'b11111111
         else if (i_apply_act) begin
-            if (r_acc < 0) begin
+            // r_acc is still in the grown fixed point format from the MAC. It must be converted back to activation scale before RELU/clamping/writeback
+            if (r_acc_rescaled < 0) begin
                 o_result <= '0;
             end
             else begin
-                if (r_acc > r_max_act_resized) begin
+                if (r_acc_rescaled > $signed({1'b0, MAX_ACT})) begin
                     o_result <= MAX_ACT;
                 end
                 else begin
-                    o_result <= r_acc[ACT_W-1:0]; // take the least significant bits of r_acc, since we know the full value can fit into that many bits.  
+                    o_result <= r_acc_rescaled[ACT_W-1:0]; // take the least significant ACT_W bits after rescaling, since we know the full value can fit into that many bits.   
                 end
             end
             o_out_valid <= 1'b1;
