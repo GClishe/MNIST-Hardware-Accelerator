@@ -45,20 +45,20 @@ module Accelerator_Top #(
     function automatic string get_wgt_file (input int idx);
         // declaring a packed array for weight files would work, but I have never used functions in SV before, so I'd like to, even if it is overkill in this instance. 
         case (idx)
-            0: return "W_PE1";
-            1: return "W_PE2";
-            2: return "W_PE3";
-            3: return "W_PE4";
-            4: return "W_PE5";
+            0: return "W_PE1.mem";
+            1: return "W_PE2.mem";
+            2: return "W_PE3.mem";
+            3: return "W_PE4.mem";
+            4: return "W_PE5.mem";
         endcase
     endfunction
     function automatic string get_bias_file (input int idx);
         case (idx)
-            0: return "B_PE1";
-            1: return "B_PE2";
-            2: return "B_PE3";
-            3: return "B_PE4";
-            4: return "B_PE5";
+            0: return "B_PE1.mem";
+            1: return "B_PE2.mem";
+            2: return "B_PE3.mem";
+            3: return "B_PE4.mem";
+            4: return "B_PE5.mem";
         endcase
     endfunction
     // Declaring control unit i/o interconnects
@@ -221,7 +221,10 @@ module Accelerator_Top #(
                 // each RAM receives same clock, address, and data, but not the same write enable.
                 .clk(i_clk),
                 .wr_addr(cu_store_idx[ACT_ADDR_W-1:0]),
-                .wr_dv((cu_dst_layer_sel == lyr) && cu_act_we && psc_activation_valid),   //only write if the CU says writing is enabled and if PSC activation output is valid, and only to RAM whose layer index equals cu_dst_layer_sel
+                // Drive the write strobe from the PSC valid directly so the RAM samples the activation on the same edge
+                // that produced it. The CU's store enable is one cycle later than the PSC data and is not the timing
+                // reference for the write itself.
+                .wr_dv((cu_dst_layer_sel == lyr) && psc_activation_valid),   // only write to the destination RAM for the current layer
                 .wr_data(psc_activation),
 
                 // choose between two possible read addresses -- cu_out_idx or cu_act_idx
@@ -234,7 +237,7 @@ module Accelerator_Top #(
                 // RAM lyr should perform a read if either the RAM is currently selected source layer (and CU wants to read) or if this RAM is the selected layer for output reading (and CU wants to read final outputs)
                 .rd_en(
                     ((cu_src_layer_sel == lyr) && cu_act_re) ||
-                    ((cu_dst_layer_sel == lyr) && cu_out_re)
+                    ((lyr == NUM_LAYERS-1) && cu_out_re)
                 ),
                 .rd_dv(act_ram_rd_dv[lyr]),       
                 .rd_data(act_ram_rd_data[lyr]) // each RAM gets its own slot in act_ram_rd_data array
