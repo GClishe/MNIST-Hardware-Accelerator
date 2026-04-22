@@ -32,9 +32,9 @@ logic             o_done;
 
 // CU probes
 logic [3:0] cu_current_state;                                        // probe for current state of state machine
-logic [ACT_W-1:0] act_ram1_probe [0:ACT_RAM_DEPTH-1];                // probe for contents of activation RAM 1
-logic [ACT_W-1:0] act_ram2_probe [0:ACT_RAM_DEPTH-1];
-logic [ACT_W-1:0] act_ram3_probe [0:ACT_RAM_DEPTH-1];
+logic [ACT_W-1:0] act_ram1_probe [0:39];                             // probe for contents of activation RAM 1
+logic [ACT_W-1:0] act_ram2_probe [0:29];
+logic [ACT_W-1:0] act_ram3_probe [0:9];
 
 // Instantiating DUT
 Accelerator_Top #(

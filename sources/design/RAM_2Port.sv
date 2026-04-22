@@ -30,6 +30,11 @@ module RAM_2Port #(
         if (INIT_FILE != "") begin
             $readmemh(INIT_FILE, mem);      // if the user passes an init file, the RAM is populated with values according to the contents of the file.
         end
+        else begin              
+            for (int i = 0; i < DEPTH; i++) begin
+                mem[i] = '0;               // if no init file is passed, RAM is populated with 0s. 
+            end
+        end
     end
 
     //write logic
