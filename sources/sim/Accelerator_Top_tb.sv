@@ -37,6 +37,14 @@ logic [ACT_W-1:0] act_ram1_probe [0:LAYER1_SIZE-1];
 logic [ACT_W-1:0] act_ram2_probe [0:LAYER2_SIZE-1];
 logic [ACT_W-1:0] act_ram3_probe [0:OUTPUT_LAYER_SIZE-1];
 
+// PE1 probes
+logic [ACT_W-1:0] probe_pe_act_in;
+logic signed [WGT_W-1:0] probe_pe0_wgt_in;
+logic signed [BIAS_W-1:0] probe_pe0_bias_in;
+logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe0_acc;
+logic [ACT_W-1:0] probe_pe0_result;
+logic             probe_pe0_out_valid;
+
 // Instantiating DUT
 Accelerator_Top #(
     .ACT_W(ACT_W),
@@ -62,7 +70,17 @@ Accelerator_Top #(
     .o_done(o_done)
 );
 
+// CU probe assignments
 assign cu_current_state = dut.cu_current_state;
+// PE probe assignments
+assign probe_pe_act_in       = dut.pe_act_in;
+assign probe_pe0_wgt_in      = dut.pe_wgt_in[0];
+assign probe_pe0_bias_in     = dut.pe_bias_in[0];
+
+assign probe_pe0_acc         = dut.g_pe[0].u_pe.r_acc;
+
+assign probe_pe0_result      = dut.pe_result[0];
+assign probe_pe0_out_valid   = dut.pe_out_valid_vec[0];
 
 // assigning elements in activation memory probe to corresponding locations in activation RAMs.
 genvar a0, a1, a2, a3;
