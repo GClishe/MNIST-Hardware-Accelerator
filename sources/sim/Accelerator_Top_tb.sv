@@ -55,6 +55,19 @@ logic             probe_wgt0_rd_dv;
 logic [BIAS_W-1:0] probe_bias0_rd_data;
 logic              probe_bias0_rd_dv;
 
+logic [15:0] probe_act0_rd_addr;        // looking at read addresses to see if the address is the problem
+logic [15:0] probe_wgt0_rd_addr;
+logic [15:0] probe_bias0_rd_addr;
+
+logic [ACT_W-1:0] probe_act0_mem0;      // looking at memory locations to see if improper memory storing is the problem
+logic [ACT_W-1:0] probe_act0_mem1;
+
+logic [WGT_W-1:0] probe_wgt0_mem0;
+logic [WGT_W-1:0] probe_wgt0_mem1;
+
+logic [BIAS_W-1:0] probe_bias0_mem0;
+logic [BIAS_W-1:0] probe_bias0_mem1;
+
 // Instantiating DUT
 Accelerator_Top #(
     .ACT_W(ACT_W),
@@ -102,6 +115,20 @@ assign probe_wgt0_rd_dv   = dut.wgt_ram_rd_dv[0];
 
 assign probe_bias0_rd_data = dut.bias_ram_rd_data[0];
 assign probe_bias0_rd_dv   = dut.bias_ram_rd_dv[0];
+
+assign probe_act0_rd_addr  = dut.g_act_ram[0].u_act_ram.rd_addr;
+assign probe_wgt0_rd_addr  = dut.g_wgt_ram[0].u_wgt_ram.rd_addr;
+assign probe_bias0_rd_addr = dut.g_bias_ram[0].u_bias_ram.rd_addr;
+
+assign probe_act0_mem0 = dut.g_act_ram[0].u_act_ram.mem[0];
+assign probe_act0_mem1 = dut.g_act_ram[0].u_act_ram.mem[1];
+
+assign probe_wgt0_mem0 = dut.g_wgt_ram[0].u_wgt_ram.mem[0];
+assign probe_wgt0_mem1 = dut.g_wgt_ram[0].u_wgt_ram.mem[1];
+
+assign probe_bias0_mem0 = dut.g_bias_ram[0].u_bias_ram.mem[0];
+assign probe_bias0_mem1 = dut.g_bias_ram[0].u_bias_ram.mem[1];
+
 
 // assigning elements in activation memory probe to corresponding locations in activation RAMs.
 genvar a0, a1, a2, a3;
