@@ -42,7 +42,7 @@ module Accelerator_Top #(
     localparam int OUT_ADDR_W   = $clog2(MAX_LAYER_SIZE);
 
     // defining file paths for weights and biases
-    function automatic string get_wgt_file (int idx);
+    function automatic string get_wgt_file (input int idx);
         // declaring a packed array for weight files would work, but I have never used functions in SV before, so I'd like to, even if it is overkill in this instance. 
         case (idx)
             0: return "W_PE1";
@@ -52,7 +52,7 @@ module Accelerator_Top #(
             4: return "W_PE5";
         endcase
     endfunction
-    function automatic string get_bias_file (int idx);
+    function automatic string get_bias_file (input int idx);
         case (idx)
             0: return "B_PE1";
             1: return "B_PE2";
