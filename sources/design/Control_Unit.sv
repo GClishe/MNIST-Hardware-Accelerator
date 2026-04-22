@@ -296,11 +296,16 @@ always_ff @(posedge i_clk) begin
             
             S_MAC: begin
                 // each cycle in this state corresponds to one multiply-accumulate
-                // note that mac enable and activation read enable signals are still on from the broadcast state
+                // keep the activation/weight stream and MAC active every cycle of the dot product
+                o_mac_en <= 1'b1;
+                o_act_re <= 1'b1;
+                o_wgt_re <= 1'b1;
             
                 if (r_MAC_counter == r_num_inputs - 1'b1) begin
                     // perform the final MAC for the current dot product and move on to biasing
                     r_MAC_counter <= '0;
+                    
+                    // stop streaming after this MAC
                     o_mac_en <= 1'b0;
                     o_act_re <= 1'b0;
                     o_wgt_re <= 1'b0;
