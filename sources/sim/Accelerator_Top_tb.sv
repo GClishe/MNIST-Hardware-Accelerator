@@ -18,7 +18,7 @@ localparam int ACT_RAM_DEPTH     = MAX_LAYER_SIZE;
 localparam int WGT_RAM_DEPTH     = 6572;
 localparam int BIAS_RAM_DEPTH    = 16;
 
-localparam string INPUT_ACTIVATIONS = "testImage_0.mem";
+localparam string INPUT_ACTIVATIONS = "testImage_7_b.mem";
 
 // DUT I/O signals 
 // todo Presuming FPGA synthesis (and P&R) works (big IF), I expect to tie i_start to FPGA button (debounced), probably an LED to o_done, and o_out_data to 7S display (to show prediction)
@@ -36,14 +36,42 @@ logic [ACT_W-1:0] act_ram0_probe [0:INPUT_LAYER_SIZE-1];             // probe fo
 logic [ACT_W-1:0] act_ram1_probe [0:LAYER1_SIZE-1];
 logic [ACT_W-1:0] act_ram2_probe [0:LAYER2_SIZE-1];
 logic [ACT_W-1:0] act_ram3_probe [0:OUTPUT_LAYER_SIZE-1];
+logic [WGT_W-1:0] wgt_ram1_probe [0:WGT_RAM_DEPTH-1];
 
 // PE1 probes
-logic [ACT_W-1:0] probe_pe_act_in;
 logic signed [WGT_W-1:0] probe_pe0_wgt_in;
 logic signed [BIAS_W-1:0] probe_pe0_bias_in;
 logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe0_acc;
 logic [ACT_W-1:0] probe_pe0_result;
 logic             probe_pe0_out_valid;
+
+// PE2 probes
+logic signed [WGT_W-1:0] probe_pe1_wgt_in;
+logic signed [BIAS_W-1:0] probe_pe1_bias_in;
+logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe1_acc;
+logic [ACT_W-1:0] probe_pe1_result;
+logic             probe_pe1_out_valid;
+
+// PE3 Probes
+logic signed [WGT_W-1:0] probe_pe2_wgt_in;
+logic signed [BIAS_W-1:0] probe_pe2_bias_in;
+logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe2_acc;
+logic [ACT_W-1:0] probe_pe2_result;
+logic             probe_pe2_out_valid;
+
+// PE4 probes
+logic signed [WGT_W-1:0] probe_pe3_wgt_in;
+logic signed [BIAS_W-1:0] probe_pe3_bias_in;
+logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe3_acc;
+logic [ACT_W-1:0] probe_pe3_result;
+logic             probe_pe3_out_valid;
+
+// PE5 Probes
+logic signed [WGT_W-1:0] probe_pe4_wgt_in;
+logic signed [BIAS_W-1:0] probe_pe4_bias_in;
+logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe4_acc;
+logic [ACT_W-1:0] probe_pe4_result;
+logic             probe_pe4_out_valid;
 
 // RAM probes
 logic [ACT_W-1:0] probe_act_rd_data0;
@@ -96,7 +124,9 @@ Accelerator_Top #(
 // CU probe assignments
 assign cu_current_state = dut.cu_current_state;
 
-// PE probe assignments
+logic [ACT_W-1:0] probe_pe_act_in;
+
+// PE1 probe assignments
 assign probe_pe_act_in       = dut.pe_act_in;
 assign probe_pe0_wgt_in      = dut.pe_wgt_in[0];
 assign probe_pe0_bias_in     = dut.pe_bias_in[0];
@@ -105,6 +135,42 @@ assign probe_pe0_acc         = dut.g_pe[0].u_pe.r_acc;
 
 assign probe_pe0_result      = dut.pe_result[0];
 assign probe_pe0_out_valid   = dut.pe_out_valid_vec[0];
+
+// PE2 probe assignments
+assign probe_pe1_wgt_in      = dut.pe_wgt_in[1];
+assign probe_pe1_bias_in     = dut.pe_bias_in[1];
+
+assign probe_pe1_acc         = dut.g_pe[1].u_pe.r_acc;
+
+assign probe_pe1_result      = dut.pe_result[1];
+assign probe_pe1_out_valid   = dut.pe_out_valid_vec[1];
+
+// PE3 probe assignments
+assign probe_pe2_wgt_in      = dut.pe_wgt_in[2];
+assign probe_pe2_bias_in     = dut.pe_bias_in[2];
+
+assign probe_pe2_acc         = dut.g_pe[2].u_pe.r_acc;
+
+assign probe_pe2_result      = dut.pe_result[2];
+assign probe_pe2_out_valid   = dut.pe_out_valid_vec[2];
+
+// PE4 probe assignments
+assign probe_pe3_wgt_in      = dut.pe_wgt_in[3];
+assign probe_pe3_bias_in     = dut.pe_bias_in[3];
+
+assign probe_pe3_acc         = dut.g_pe[3].u_pe.r_acc;
+
+assign probe_pe3_result      = dut.pe_result[3];
+assign probe_pe3_out_valid   = dut.pe_out_valid_vec[3];
+
+// PE5 probe assignments
+assign probe_pe4_wgt_in      = dut.pe_wgt_in[4];
+assign probe_pe4_bias_in     = dut.pe_bias_in[4];
+
+assign probe_pe4_acc         = dut.g_pe[4].u_pe.r_acc;
+
+assign probe_pe4_result      = dut.pe_result[4];
+assign probe_pe4_out_valid   = dut.pe_out_valid_vec[4];
 
 // RAM probe assignments
 assign probe_act_rd_data0 = dut.act_ram_rd_data[0];
@@ -131,7 +197,7 @@ assign probe_bias0_mem1 = dut.g_bias_ram[0].u_bias_ram.mem[1];
 
 
 // assigning elements in activation memory probe to corresponding locations in activation RAMs.
-genvar a0, a1, a2, a3;
+genvar a0, a1, a2, a3, w1;
 generate
     //act_ram_probe[addr_p] assigned to activation RAM data at location addr_p
     // dut.g_act_ram[lyr_p] indexes the generate for loop inside the accelerator_top module that is used to instantiate the RAM_2Port module.
@@ -150,6 +216,9 @@ generate
     end
     for (a3 = 0; a3 < OUTPUT_LAYER_SIZE; a3++) begin : g_probe_ram3
         assign act_ram3_probe[a3] = dut.g_act_ram[3].u_act_ram.mem[a3];
+    end
+    for (w1 = 0; w1 < WGT_RAM_DEPTH; w1++) begin : g_probe_rweight0
+        assign wgt_ram1_probe[w1] = dut.g_wgt_ram[0].u_wgt_ram.mem[w1];
     end
 endgenerate
 
