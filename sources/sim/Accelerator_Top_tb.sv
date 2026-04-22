@@ -18,7 +18,7 @@ localparam int ACT_RAM_DEPTH     = MAX_LAYER_SIZE;
 localparam int WGT_RAM_DEPTH     = 6572;
 localparam int BIAS_RAM_DEPTH    = 16;
 
-localparam string INPUT_ACTIVATIONS = "A_random.mem";
+localparam string INPUT_ACTIVATIONS = "testImage_0.mem";
 
 // DUT I/O signals 
 // todo Presuming FPGA synthesis (and P&R) works (big IF), I expect to tie i_start to FPGA button (debounced), probably an LED to o_done, and o_out_data to 7S display (to show prediction)
