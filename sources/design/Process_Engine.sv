@@ -26,7 +26,15 @@ module Process_Engine # (
     parameter int ACT_W = 8,
     parameter int WGT_W = 8,
     parameter int BIAS_W = 8,
-    parameter int NUM_MACS = 784                        // number of MAC operations in the dot product. Used to determine ACC_W 
+    parameter int NUM_MACS = 784,                        // number of MAC operations in the dot product. Used to determine ACC_W 
+
+    // fixed point format parameters
+    // all non-sign bits are fractional:
+    // activations: unsigned Q0.8
+    // weights/biases: signed Q1.7
+    parameter int ACT_FRAC = 8,
+    parameter int WGT_FRAC = 7,
+    parameter int BIAS_FRAC = 7
 ) (
     input  logic                        i_clk,
     input  logic                        i_rst,
