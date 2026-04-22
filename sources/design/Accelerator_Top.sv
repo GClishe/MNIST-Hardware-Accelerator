@@ -209,12 +209,13 @@ module Accelerator_Top #(
     endgenerate
 
     // ==============================INSTANTIATING ACTIVATION RAMS===================================================================================
+    localparam int act_ram_depths [0:3] = '{784, 40, 30, 10};       // variable array depths for each layer. 
     genvar lyr;
     generate
         for (lyr = 0; lyr < NUM_LAYERS; lyr++) begin : g_act_ram    // create an array of activation RAMs, one per layer
             RAM_2Port #(
                 .WIDTH(ACT_W),
-                .DEPTH(ACT_RAM_DEPTH),
+                .DEPTH(act_ram_depths[lyr]),
                 .INIT_FILE((lyr == 0) ? INPUT_ACTIVATIONS : "")     // on lyr=0 (input layer), load INPUT_ACTIVATIONS. Else, do no loading. 
             ) u_act_ram (
                 // each RAM receives same clock, address, and data, but not the same write enable.
