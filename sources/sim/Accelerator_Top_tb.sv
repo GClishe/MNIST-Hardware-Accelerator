@@ -45,6 +45,16 @@ logic signed [dut.g_pe[0].u_pe.ACC_W-1:0]  probe_pe0_acc;
 logic [ACT_W-1:0] probe_pe0_result;
 logic             probe_pe0_out_valid;
 
+// RAM probes
+logic [ACT_W-1:0] probe_act_rd_data0;
+logic             probe_act_rd_dv0;
+
+logic [WGT_W-1:0] probe_wgt0_rd_data;
+logic             probe_wgt0_rd_dv;
+
+logic [BIAS_W-1:0] probe_bias0_rd_data;
+logic              probe_bias0_rd_dv;
+
 // Instantiating DUT
 Accelerator_Top #(
     .ACT_W(ACT_W),
@@ -72,6 +82,7 @@ Accelerator_Top #(
 
 // CU probe assignments
 assign cu_current_state = dut.cu_current_state;
+
 // PE probe assignments
 assign probe_pe_act_in       = dut.pe_act_in;
 assign probe_pe0_wgt_in      = dut.pe_wgt_in[0];
@@ -81,6 +92,16 @@ assign probe_pe0_acc         = dut.g_pe[0].u_pe.r_acc;
 
 assign probe_pe0_result      = dut.pe_result[0];
 assign probe_pe0_out_valid   = dut.pe_out_valid_vec[0];
+
+// RAM probe assignments
+assign probe_act_rd_data0 = dut.act_ram_rd_data[0];
+assign probe_act_rd_dv0   = dut.act_ram_rd_dv[0];
+
+assign probe_wgt0_rd_data = dut.wgt_ram_rd_data[0];
+assign probe_wgt0_rd_dv   = dut.wgt_ram_rd_dv[0];
+
+assign probe_bias0_rd_data = dut.bias_ram_rd_data[0];
+assign probe_bias0_rd_dv   = dut.bias_ram_rd_dv[0];
 
 // assigning elements in activation memory probe to corresponding locations in activation RAMs.
 genvar a0, a1, a2, a3;
