@@ -55,10 +55,10 @@ module Process_Engine # (
 localparam int PROD_FRAC = ACT_FRAC + WGT_FRAC;
 
 // output has same fractional format as activations
-localparam int OUT_FRAC = ACT_FRAC
+localparam int OUT_FRAC = ACT_FRAC;
 
 // to convert accumulator/product scale back into activation scale, we shift right by RESCALE_SHIFT bits
-localparam RESCALE_SHIFT = PROD_FRAC - OUT_FRAC;
+localparam int RESCALE_SHIFT = PROD_FRAC - OUT_FRAC;
 
 // bias must also be aligned to accumulator/product scale before additional
 localparam int BIAS_ALIGN_SHIFT = PROD_FRAC - BIAS_FRAC;
