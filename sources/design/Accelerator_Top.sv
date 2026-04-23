@@ -210,7 +210,7 @@ module Accelerator_Top #(
 
     // ==============================INSTANTIATING ACTIVATION RAMS===================================================================================
     localparam int act_ram_depths [0:3] = '{784, 40, 30, 10};       // variable array depths for each layer. 
-    localparam int act_addr_widths [0:3] = '{$clog2(784), $clog2(40), $clog2(30), $clog2(10) };
+    localparam int act_addr_widths [0:3] = '{$clog2(784), $clog2(40), $clog2(30), $clog2(10) }
     genvar lyr;
     generate
         for (lyr = 0; lyr < NUM_LAYERS; lyr++) begin : g_act_ram    // create an array of activation RAMs, one per layer
